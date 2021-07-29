@@ -1,0 +1,11 @@
+{
+  "dependencies": {
+    "@nomiclabs/hardhat-ethers": "^2.0.2",
+    "@nomiclabs/hardhat-waffle": "^2.0.1",
+    "@uniswap/v3-periphery": "^1.1.1",
+    "chai": "^4.3.4",
+    "ethers": "^5.4.1",
+    "hardhat": "^2.4.3",
+    "immer": "^9.0.5"
+  }
+}
