@@ -1,12 +1,12 @@
-const et = require('euler-contracts/test/lib/eTestLib.js');
-const { provisionUniswapPool, deposit, deployBot } = require('./helpers/helpers');
+const et = require('euler-contracts/test/lib/eTestLib.js').config(`${__dirname}/lib/eTestLib.config.js`);
+const { provisionUniswapPool, deposit, deployBot } = require('./lib/helpers');
 
 et.testSet({
     desc: "liquidation",
     fixture: "testing-real-uniswap-activated",
 
     preActions: ctx => [
-        deployBot(ctx),
+        // deployBot(ctx),
 
         { action: 'setIRM', underlying: 'WETH', irm: 'IRM_ZERO', },
         { action: 'setIRM', underlying: 'TST', irm: 'IRM_ZERO', },
@@ -29,9 +29,9 @@ et.testSet({
         ...provisionUniswapPool(ctx, 'TST3/WETH', ctx.wallet5, et.eth(1000)),
 
         // initial prices
-        { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST', dir: 'sell', amount: et.eth(10_000), priceLimit: 1/2.2, },
-        { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST2', dir: 'buy', amount: et.eth(10_000), priceLimit: 1/0.4 },
-        { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST3', dir: 'sell', amount: et.eth(10_000), priceLimit: 1/1.7 },
+        { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST', dir: 'buy', amount: et.eth(10_000), priceLimit: 2.2, },
+        { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST2', dir: 'sell', amount: et.eth(10_000), priceLimit: 0.4 },
+        { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST3', dir: 'buy', amount: et.eth(10_000), priceLimit: 1.7 },
 
         // wait for twap
         { action: 'checkpointTime', },
@@ -49,7 +49,17 @@ et.testSet({
             et.equals(r.collateralValue / r.liabilityValue, 1.09, 0.01);
         }, },
 
-        { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST', dir: 'sell', amount: et.eth(10_000), priceLimit: 1/2.5 },
+        { call: 'tokens.TST.balanceOf', args: [ctx.wallet5.address], onResult: r => {
+            console.log('TST: ', r.toString());
+        }},
+        { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST', dir: 'buy', amount: et.eth(10_000), priceLimit: 2.5 },
+        { call: 'tokens.TST.balanceOf', args: [ctx.wallet5.address], onResult: r => {
+            console.log('TST: ', r.toString());
+        }},
+
+        { callStatic: 'exec.getPriceFull', args: [ctx.contracts.tokens.TST.address], onResult: r => {
+            console.log('price: ', et.formatUnits(r.twap));
+        }},
 
         { action: 'checkpointTime', },
         { action: 'jumpTimeAndMine', time: 3600 * 30 * 100 },

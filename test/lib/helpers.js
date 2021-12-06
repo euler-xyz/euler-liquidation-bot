@@ -16,13 +16,7 @@ const deposit = (ctx, token, wallet = ctx.wallet, subAccountId = 0, amount = 100
     { from: wallet, send: `eTokens.e${token}.deposit`, args: [subAccountId, et.MaxUint256,], },
 ];
 
-const deployBot = ctx => async () => {
-    const liquidationBotFactory = await ethers.getContractFactory('LiquidationBot');
-    ctx.contracts.liquidationBot = await (await liquidationBotFactory.deploy()).deployed()
-};
-
 module.exports = {
     provisionUniswapPool,
     deposit,
-    deployBot,
 };
