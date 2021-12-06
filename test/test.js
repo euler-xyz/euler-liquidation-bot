@@ -27,61 +27,81 @@ et.testSet({
         ...provisionUniswapPool(ctx, 'TST/WETH', ctx.wallet5, et.eth(1000)),
         ...provisionUniswapPool(ctx, 'TST2/WETH', ctx.wallet5, et.eth(1000)),
         ...provisionUniswapPool(ctx, 'TST3/WETH', ctx.wallet5, et.eth(1000)),
+
+        // initial prices
+        { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST', dir: 'sell', amount: et.eth(10_000), priceLimit: 1/2.2, },
+        { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST2', dir: 'buy', amount: et.eth(10_000), priceLimit: 1/0.4 },
+        { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST3', dir: 'sell', amount: et.eth(10_000), priceLimit: 1/1.7 },
+
+        // wait for twap
+        { action: 'checkpointTime', },
+        { action: 'jumpTimeAndMine', time: 3600 * 30 },
     ],
 })
 
 
 .test({
-  desc: "basic full liquidation",
-  actions: ctx => [
-    // initial prices
+    desc: "basic full liquidation",
+    actions: ctx => [
+        { from: ctx.wallet2, send: 'dTokens.dTST.borrow', args: [0, et.eth(5)], },
 
-    { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST', dir: 'sell', amount: et.eth(10_000), priceLimit: 1/2.2, },
-    { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST2', dir: 'buy', amount: et.eth(10_000), priceLimit: 1/0.4 },
-    { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST3', dir: 'sell', amount: et.eth(10_000), priceLimit: 1/1.7 },
+        { callStatic: 'exec.liquidity', args: [ctx.wallet2.address], onResult: r => {
+            et.equals(r.collateralValue / r.liabilityValue, 1.09, 0.01);
+        }, },
 
-    { action: 'checkpointTime', },
-    { action: 'jumpTimeAndMine', time: 3600 * 30 },
+        { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST', dir: 'sell', amount: et.eth(10_000), priceLimit: 1/2.5 },
 
+        { action: 'checkpointTime', },
+        { action: 'jumpTimeAndMine', time: 3600 * 30 * 100 },
 
-    { from: ctx.wallet2, send: 'dTokens.dTST.borrow', args: [0, et.eth(5)], },
+        { callStatic: 'exec.liquidity', args: [ctx.wallet2.address], onResult: r => {
+            et.equals(r.collateralValue / r.liabilityValue, 0.96, 0.001);
+        }, },
 
-    { callStatic: 'exec.liquidity', args: [ctx.wallet2.address], onResult: r => {
-        et.equals(r.collateralValue / r.liabilityValue, 1.09, 0.01);
-    }, },
-
-    { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST', dir: 'sell', amount: et.eth(10_000), priceLimit: 1/2.5 },
-
-    { action: 'checkpointTime', },
-    { action: 'jumpTimeAndMine', time: 3600 * 30 * 100 },
-
-    { callStatic: 'exec.liquidity', args: [ctx.wallet2.address], onResult: r => {
-        et.equals(r.collateralValue / r.liabilityValue, 0.96, 0.001);
-    }, },
-
-    { callStatic: 'liquidation.checkLiquidation', args: [ctx.wallet.address, ctx.wallet2.address, ctx.contracts.tokens.TST.address, ctx.contracts.tokens.TST2.address],
-        onResult: r => {
-            et.equals(r.healthScore, 0.96, 0.001);
-            ctx.stash.repay = r.repay;
-            console.log('r.repay: ', r.repay.toString());
-            ctx.stash.yield = r.yield;
+        { callStatic: 'liquidation.checkLiquidation', args: [ctx.wallet.address, ctx.wallet2.address, ctx.contracts.tokens.TST.address, ctx.contracts.tokens.TST2.address],
+            onResult: r => {
+                et.equals(r.healthScore, 0.96, 0.001);
+                ctx.stash.repay = r.repay;
+                console.log('r.repay: ', r.repay.toString());
+                ctx.stash.yield = r.yield;
+                console.log('r.yield: ', r.yield.toString());
+            },
         },
-    },
 
-    { send: 'liquidationBot.liquidate', args: [async () => ({
-        eulerAddr: ctx.contracts.euler.address,
-        liquidationAddr: ctx.contracts.liquidation.address,
-        execAddr: ctx.contracts.exec.address,
-        marketsAddr: ctx.contracts.markets.address,
+        { send: 'liquidationBot.liquidate', args: [async () => ({
+            eulerAddr: ctx.contracts.euler.address,
+            liquidationAddr: ctx.contracts.liquidation.address,
+            execAddr: ctx.contracts.exec.address,
+            swapAddr: ctx.contracts.swap.address,
 
-        swapRouter: ctx.swapRouterAddress, // FIXME
-        swapPath: await ctx.encodeUniswapPath(['TST2/WETH', 'TST/WETH'], 'TST2', 'TST'),
+            swapPath: await ctx.encodeUniswapPath(['TST2/WETH', 'TST/WETH'], 'TST2', 'TST', true),
 
-        violator: ctx.wallet2.address,
-        underlying: ctx.contracts.tokens.TST.address,
-        collateral: ctx.contracts.tokens.TST2.address,
-    })], }
-  ]
+            violator: ctx.wallet2.address,
+            underlying: ctx.contracts.tokens.TST.address,
+            collateral: ctx.contracts.tokens.TST2.address,
+        })], },
+
+        { call: 'eTokens.eTST.balanceOfUnderlying', args: [ctx.contracts.liquidationBot.address], onResult: r => {
+            console.log('TST: ', r.toString());
+        }},
+        { call: 'eTokens.eTST2.balanceOfUnderlying', args: [ctx.contracts.liquidationBot.address], onResult: r => {
+            console.log('TST2: ', r.toString());
+        }},
+
+        { call: 'eTokens.eTST.balanceOf', args: [ctx.contracts.liquidationBot.address], onResult: r => {
+            console.log('eTST: ', r.toString());
+        }},
+        { call: 'eTokens.eTST2.balanceOf', args: [ctx.contracts.liquidationBot.address], onResult: r => {
+            console.log('eTST2: ', r.toString());
+        }},
+
+        { callStatic: 'liquidation.checkLiquidation', args: [ctx.wallet.address, ctx.wallet2.address, ctx.contracts.tokens.TST.address, ctx.contracts.tokens.TST2.address],
+            onResult: r => {
+                et.equals(r.healthScore, 1.25, 0.001);
+            },
+        },
+
+    ]
 })
 
 

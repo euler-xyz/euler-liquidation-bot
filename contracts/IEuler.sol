@@ -1,11 +1,16 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity >=0.5.0;
 pragma abicoder v2;
 
 
 /// @notice Main storage contract for the Euler system
 interface IEuler {
-    /// @notice Lookup a proxy that can be used to interact with a module
+    /// @notice Lookup the current implementation contract for a module
+    /// @param moduleId Fixed constant that refers to a module type (ie MODULEID__ETOKEN)
+    /// @return An internal address specifies the module's implementation code
+    function moduleIdToImplementation(uint moduleId) external view returns (address);
+
+    /// @notice Lookup a proxy that can be used to interact with a module (only valid for single-proxy modules)
     /// @param moduleId Fixed constant that refers to a module type (ie MODULEID__MARKETS)
     /// @return An address that should be cast to the appropriate module interface, ie IEulerMarkets(moduleIdToProxy(2))
     function moduleIdToProxy(uint moduleId) external view returns (address);
@@ -48,20 +53,25 @@ interface IEulerMarkets {
     /// @return PToken address, or address(0) if it doesn't exist
     function underlyingToPToken(address underlying) external view returns (address);
 
-    /// @notice Looks up the Euler-related configuration for a token
+    /// @notice Looks up the Euler-related configuration for a token, and resolves all default-value placeholders to their currently configured values.
     /// @param underlying Token address
     /// @return Configuration struct
     function underlyingToAssetConfig(address underlying) external view returns (IEuler.AssetConfig memory);
 
+    /// @notice Looks up the Euler-related configuration for a token, and returns it unresolved (with default-value placeholders)
+    /// @param underlying Token address
+    /// @return config Configuration struct
+    function underlyingToAssetConfigUnresolved(address underlying) external view returns (IEuler.AssetConfig memory config);
+
     /// @notice Given an EToken address, looks up the associated underlying
     /// @param eToken EToken address
-    /// @return Token address
-    function eTokenToUnderlying(address eToken) external view returns (address);
+    /// @return underlying Token address
+    function eTokenToUnderlying(address eToken) external view returns (address underlying);
 
-    /// @notice Given an EToken address, looks up the associated DToken underlying
+    /// @notice Given an EToken address, looks up the associated DToken
     /// @param eToken EToken address
-    /// @return DToken address
-    function eTokenToDToken(address eToken) external view returns (address);
+    /// @return dTokenAddr DToken address
+    function eTokenToDToken(address eToken) external view returns (address dTokenAddr);
 
     /// @notice Looks up an asset's currently configured interest rate model
     /// @param underlying Token address
@@ -85,7 +95,7 @@ interface IEulerMarkets {
 
     /// @notice Retrieves the pricing config for an asset
     /// @param underlying Token address
-    /// @return pricingType (1=pegged, 2=uniswap3)
+    /// @return pricingType (1=pegged, 2=uniswap3, 3=forwarded)
     /// @return pricingParameters If uniswap3 pricingType then this represents the uniswap pool fee used, otherwise unused
     /// @return pricingForwarded If forwarded pricingType then this is the address prices are forwarded to, otherwise address(0)
     function getPricingConfig(address underlying) external view returns (uint16 pricingType, uint32 pricingParameters, address pricingForwarded);
@@ -175,11 +185,27 @@ interface IEulerExec {
     /// @return List of operation results
     function batchDispatch(EulerBatchItem[] calldata items, address[] calldata deferLiquidityChecks) external returns (EulerBatchItemResponse[] memory);
 
-    /// @notice Enable average liquidity tracking for your account. Operations will cost more gas, but you may get additional benefits when performing liquidations
-    /// @param subAccountId subAccountId 0 for primary, 1-255 for a sub-account
-    function trackAverageLiquidity(uint subAccountId) external;
+    /// @notice Results of a batchDispatch, but with extra information
+    struct EulerBatchExtra {
+        EulerBatchItemResponse[] responses;
+        uint gasUsed;
+        AssetLiquidity[][] liquidities;
+    }
 
-    /// @notice Disable average liquidity tracking for your account
+    /// @notice Call batchDispatch, but return extra information. Only intended to be used with callStatic.
+    /// @param items List of operations to execute
+    /// @param deferLiquidityChecks List of user accounts to defer liquidity checks for
+    /// @param queryLiquidity List of user accounts to return detailed liquidity information for
+    /// @return output Structure with extra information
+    function batchDispatchExtra(EulerBatchItem[] calldata items, address[] calldata deferLiquidityChecks, address[] calldata queryLiquidity) external returns (EulerBatchExtra memory output);
+
+    /// @notice Enable average liquidity tracking for your account. Operations will cost more gas, but you may get additional benefits when performing liquidations
+    /// @param subAccountId subAccountId 0 for primary, 1-255 for a sub-account. 
+    /// @param delegate An address of another account that you would allow to use the benefits of your account's average liquidity (use the null address if you don't care about this). The other address must also reciprocally delegate to your account.
+    /// @param onlyDelegate Set this flag to skip tracking average liquidity and only set the delegate.
+    function trackAverageLiquidity(uint subAccountId, address delegate, bool onlyDelegate) external;
+
+    /// @notice Disable average liquidity tracking for your account and remove delegate
     /// @param subAccountId subAccountId 0 for primary, 1-255 for a sub-account
     function unTrackAverageLiquidity(uint subAccountId) external;
 
@@ -187,6 +213,26 @@ interface IEulerExec {
     /// @param account User account (xor in subAccountId, if applicable)
     /// @return The average liquidity, in terms of the reference asset, and post risk-adjustment
     function getAverageLiquidity(address account) external returns (uint);
+
+    /// @notice Retrieve the average liquidity for an account or a delegate account, if set
+    /// @param account User account (xor in subAccountId, if applicable)
+    /// @return The average liquidity, in terms of the reference asset, and post risk-adjustment
+    function getAverageLiquidityWithDelegate(address account) external returns (uint);
+
+    /// @notice Retrieve the account which delegates average liquidity for an account, if set
+    /// @param account User account (xor in subAccountId, if applicable)
+    /// @return The average liquidity delegate account
+    function getAverageLiquidityDelegateAccount(address account) external view returns (address);
+
+    /// @notice Transfer underlying tokens from sender's wallet into the pToken wrapper. Allowance should be set for the euler address.
+    /// @param underlying Token address
+    /// @param amount The amount to wrap in underlying units
+    function pTokenWrap(address underlying, uint amount) external;
+
+    /// @notice Transfer underlying tokens from the pToken wrapper to the sender's wallet.
+    /// @param underlying Token address
+    /// @param amount The amount to unwrap in underlying units
+    function pTokenUnWrap(address underlying, uint amount) external;
 }
 
 
@@ -219,6 +265,9 @@ interface IEulerEToken {
     /// @notice Balance of the reserves, in underlying units (increases as interest is earned)
     function reserveBalanceUnderlying() external view returns (uint);
 
+    /// @notice Updates interest accumulator and totalBorrows, credits reserves, re-targets interest rate, and logs asset status
+    function touch() external;
+
     /// @notice Transfer underlying tokens from sender to the Euler pool, and increase account's eTokens
     /// @param subAccountId 0 for primary, 1-255 for a sub-account
     /// @param amount In underlying units (use max uint256 for full underlying token balance)
@@ -236,7 +285,7 @@ interface IEulerEToken {
 
     /// @notice Pay off dToken liability with eTokens ("self-repay")
     /// @param subAccountId 0 for primary, 1-255 for a sub-account
-    /// @param amount In underlying units (use max uint256 to repay full dToken balance)
+    /// @param amount In underlying units (use max uint256 to repay the debt in full or up to the available underlying balance)
     function burn(uint subAccountId, uint amount) external;
 
     /// @notice Allow spender to access an amount of your eTokens in sub-account 0
@@ -282,7 +331,7 @@ interface IEulerDToken {
     /// @notice Sum of all outstanding debts, in underlying units (increases as interest is accrued)
     function totalSupply() external view returns (uint);
 
-    /// @notice Sum of all outstanding debts, in underlying units with extra precision
+    /// @notice Sum of all outstanding debts, in underlying units with extra precision (increases as interest is accrued)
     function totalSupplyExact() external view returns (uint);
 
     /// @notice Debt owed by a particular account, in underlying units
@@ -301,21 +350,16 @@ interface IEulerDToken {
     /// @param amount In underlying units (use max uint256 for full debt owed)
     function repay(uint subAccountId, uint amount) external;
 
-    /// @notice Allow spender to send an amount of dTokens to your sub-account 0
-    /// @param spender Trusted address
-    /// @param amount Use max uint256 for "infinite" allowance
-    function approve(address spender, uint amount) external returns (bool);
-
     /// @notice Allow spender to send an amount of dTokens to a particular sub-account
     /// @param subAccountId 0 for primary, 1-255 for a sub-account
     /// @param spender Trusted address
     /// @param amount Use max uint256 for "infinite" allowance
-    function approveSubAccount(uint subAccountId, address spender, uint amount) external returns (bool);
+    function approveDebt(uint subAccountId, address spender, uint amount) external returns (bool);
 
-    /// @notice Retrieve the current allowance
+    /// @notice Retrieve the current debt allowance
     /// @param holder Xor with the desired sub-account ID (if applicable)
     /// @param spender Trusted address
-    function allowance(address holder, address spender) external view returns (uint);
+    function debtAllowance(address holder, address spender) external view returns (uint);
 
     /// @notice Transfer dTokens to another address (from sub-account 0)
     /// @param to Xor with the desired sub-account ID (if applicable)
@@ -362,8 +406,179 @@ interface IEulerLiquidation {
 }
 
 
+/// @notice Trading assets on Uniswap V3 and 1Inch V4 DEXs
+interface IEulerSwap {
+    /// @notice Params for Uniswap V3 exact input trade on a single pool
+    /// @param subAccountIdIn subaccount id to trade from
+    /// @param subAccountIdOut subaccount id to trade to
+    /// @param underlyingIn sold token address
+    /// @param underlyingOut bought token address
+    /// @param amountIn amount of token to sell
+    /// @param amountOutMinimum minimum amount of bought token
+    /// @param deadline trade must complete before this timestamp
+    /// @param fee uniswap pool fee to use
+    /// @param sqrtPriceLimitX96 maximum acceptable price
+    struct SwapUniExactInputSingleParams {
+        uint subAccountIdIn;
+        uint subAccountIdOut;
+        address underlyingIn;
+        address underlyingOut;
+        uint amountIn;
+        uint amountOutMinimum;
+        uint deadline;
+        uint24 fee;
+        uint160 sqrtPriceLimitX96;
+    }
+
+    /// @notice Params for Uniswap V3 exact input trade routed through multiple pools
+    /// @param subAccountIdIn subaccount id to trade from
+    /// @param subAccountIdOut subaccount id to trade to
+    /// @param underlyingIn sold token address
+    /// @param underlyingOut bought token address
+    /// @param amountIn amount of token to sell
+    /// @param amountOutMinimum minimum amount of bought token
+    /// @param deadline trade must complete before this timestamp
+    /// @param path list of pools to use for the trade
+    struct SwapUniExactInputParams {
+        uint subAccountIdIn;
+        uint subAccountIdOut;
+        uint amountIn;
+        uint amountOutMinimum;
+        uint deadline;
+        bytes path; // list of pools to hop - constructed with uni SDK 
+    }
+
+    /// @notice Params for Uniswap V3 exact output trade on a single pool
+    /// @param subAccountIdIn subaccount id to trade from
+    /// @param subAccountIdOut subaccount id to trade to
+    /// @param underlyingIn sold token address
+    /// @param underlyingOut bought token address
+    /// @param amountOut amount of token to buy
+    /// @param amountInMaximum maximum amount of sold token
+    /// @param deadline trade must complete before this timestamp
+    /// @param fee uniswap pool fee to use
+    /// @param sqrtPriceLimitX96 maximum acceptable price
+    struct SwapUniExactOutputSingleParams {
+        uint subAccountIdIn;
+        uint subAccountIdOut;
+        address underlyingIn;
+        address underlyingOut;
+        uint amountOut;
+        uint amountInMaximum;
+        uint deadline;
+        uint24 fee;
+        uint160 sqrtPriceLimitX96;
+    }
+
+    /// @notice Params for Uniswap V3 exact output trade routed through multiple pools
+    /// @param subAccountIdIn subaccount id to trade from
+    /// @param subAccountIdOut subaccount id to trade to
+    /// @param underlyingIn sold token address
+    /// @param underlyingOut bought token address
+    /// @param amountOut amount of token to buy
+    /// @param amountInMaximum maximum amount of sold token
+    /// @param deadline trade must complete before this timestamp
+    /// @param path list of pools to use for the trade
+    struct SwapUniExactOutputParams {
+        uint subAccountIdIn;
+        uint subAccountIdOut;
+        uint amountOut;
+        uint amountInMaximum;
+        uint deadline;
+        bytes path;
+    }
+
+    /// @notice Params for 1Inch trade
+    /// @param subAccountIdIn subaccount id to trade from
+    /// @param subAccountIdOut subaccount id to trade to
+    /// @param underlyingIn sold token address
+    /// @param underlyingOut bought token address
+    /// @param amount amount of token to sell
+    /// @param amountOutMinimum minimum amount of bought token
+    /// @param payload call data passed to 1Inch contract
+    struct Swap1InchParams {
+        uint subAccountIdIn;
+        uint subAccountIdOut;
+        address underlyingIn;
+        address underlyingOut;
+        uint amount;
+        uint amountOutMinimum;
+        bytes payload;
+    }
+
+    /// @notice Execute Uniswap V3 exact input trade on a single pool
+    /// @param params struct defining trade parameters
+    function swapUniExactInputSingle(SwapUniExactInputSingleParams memory params) external;
+
+    /// @notice Execute Uniswap V3 exact input trade routed through multiple pools
+    /// @param params struct defining trade parameters
+    function swapUniExactInput(SwapUniExactInputParams memory params) external;
+
+    /// @notice Execute Uniswap V3 exact output trade on a single pool
+    /// @param params struct defining trade parameters
+    function swapUniExactOutputSingle(SwapUniExactOutputSingleParams memory params) external;
+
+    /// @notice Execute Uniswap V3 exact output trade routed through multiple pools
+    /// @param params struct defining trade parameters
+    function swapUniExactOutput(SwapUniExactOutputParams memory params) external;
+
+    /// @notice Trade on Uniswap V3 single pool and repay debt with bought asset
+    /// @param params struct defining trade parameters (amountOut is ignored)
+    /// @param targetDebt amount of debt that is expected to remain after trade and repay (0 to repay full debt)
+    function swapAndRepayUniSingle(SwapUniExactOutputSingleParams memory params, uint targetDebt) external;
+
+    /// @notice Trade on Uniswap V3 through multiple pools pool and repay debt with bought asset
+    /// @param params struct defining trade parameters (amountOut is ignored)
+    /// @param targetDebt amount of debt that is expected to remain after trade and repay (0 to repay full debt)
+    function swapAndRepayUni(SwapUniExactOutputParams memory params, uint targetDebt) external;
+
+    /// @notice Execute 1Inch V4 trade
+    /// @param params struct defining trade parameters
+    function swap1Inch(Swap1InchParams memory params) external;
+}
+
+
 /// @notice Protected Tokens are simple wrappers for tokens, allowing you to use tokens as collateral without permitting borrowing
 interface IEulerPToken {
+    /// @notice PToken name, ie "Euler Protected DAI"
+    function name() external view returns (string memory);
+
+    /// @notice PToken symbol, ie "pDAI"
+    function symbol() external view returns (string memory);
+
+    /// @notice Number of decimals, which is same as the underlying's
+    function decimals() external view returns (uint8);
+
+    /// @notice Address of the underlying asset
+    function underlying() external view returns (address);
+
+    /// @notice Balance of an account's wrapped tokens
+    function balanceOf(address who) external view returns (uint);
+
+    /// @notice Sum of all wrapped token balances
+    function totalSupply() external view returns (uint);
+
+    /// @notice Retrieve the current allowance
+    /// @param holder Address giving permission to access tokens
+    /// @param spender Trusted address
+    function allowance(address holder, address spender) external view returns (uint);
+
+    /// @notice Transfer your own pTokens to another address
+    /// @param recipient Recipient address
+    /// @param amount Amount of wrapped token to transfer
+    function transfer(address recipient, uint amount) external returns (bool);
+
+    /// @notice Transfer pTokens from one address to another. The euler address is automatically granted approval.
+    /// @param from This address must've approved the to address
+    /// @param recipient Recipient address
+    /// @param amount Amount to transfer
+    function transferFrom(address from, address recipient, uint amount) external returns (bool);
+
+    /// @notice Allow spender to access an amount of your pTokens. It is not necessary to approve the euler address.
+    /// @param spender Trusted address
+    /// @param amount Use max uint256 for "infinite" allowance
+    function approve(address spender, uint amount) external returns (bool);
+
     /// @notice Convert underlying tokens to pTokens
     /// @param amount In underlying units (which are equivalent to pToken units)
     function wrap(uint amount) external;
@@ -371,4 +586,23 @@ interface IEulerPToken {
     /// @notice Convert pTokens to underlying tokens
     /// @param amount In pToken units (which are equivalent to underlying units)
     function unwrap(uint amount) external;
+
+    /// @notice Claim any surplus tokens held by the PToken contract. This should only be used by contracts.
+    /// @param who Beneficiary to be credited for the surplus token amount
+    function claimSurplus(address who) external;
+}
+
+
+library EulerAddrsMainnet {
+    IEuler public constant euler = IEuler(0x27182842E098f60e3D576794A5bFFb0777E025d3);
+    IEulerMarkets public constant markets = IEulerMarkets(0x3520d5a913427E6F0D6A83E07ccD4A4da316e4d3);
+    IEulerLiquidation public constant liquidation = IEulerLiquidation(0xf43ce1d09050BAfd6980dD43Cde2aB9F18C85b34);
+    IEulerExec public constant exec = IEulerExec(0x59828FdF7ee634AaaD3f58B19fDBa3b03E2D9d80);
+}
+
+library EulerAddrsRopsten {
+    IEuler public constant euler = IEuler(0xfC3DD73e918b931be7DEfd0cc616508391bcc001);
+    IEulerMarkets public constant markets = IEulerMarkets(0x60Ec84902908f5c8420331300055A63E6284F522);
+    IEulerLiquidation public constant liquidation = IEulerLiquidation(0xf9773f2D869Bdbe0B6aC6D6fD7df82b82C998DC7);
+    IEulerExec public constant exec = IEulerExec(0xF7B8611008Ed073Ef348FE130671688BBb20409d);
 }

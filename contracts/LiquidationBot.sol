@@ -7,25 +7,6 @@ import "./IEuler.sol";
 import "hardhat/console.sol";
 
 
-
-interface IERC20 {
-    event Approval(address indexed owner, address indexed spender, uint value);
-    event Transfer(address indexed from, address indexed to, uint value);
-
-    function name() external view returns (string memory);
-    function symbol() external view returns (string memory);
-    function decimals() external view returns (uint8);
-    function totalSupply() external view returns (uint);
-    function balanceOf(address owner) external view returns (uint);
-    function allowance(address owner, address spender) external view returns (uint);
-
-    function approve(address spender, uint value) external returns (bool);
-    function transfer(address to, uint value) external returns (bool);
-    function transferFrom(address from, address to, uint value) external returns (bool);
-}
-
-
-
 contract LiquidationBot {
     address immutable owner;
 
@@ -38,18 +19,12 @@ contract LiquidationBot {
         _;
     }
 
-    function raw(address to, bytes calldata data, uint value) external onlyOwner {
-        (bool success, bytes memory result) = to.call{ value: value }(data);
-        if (!success) revertBytes(result);
-    }
-
     struct LiquidationParams {
         address eulerAddr;
         address liquidationAddr;
         address execAddr;
-        address marketsAddr;
+        address swapAddr;
 
-        address swapRouter;
         bytes swapPath;
 
         address violator;
@@ -62,6 +37,7 @@ contract LiquidationBot {
     }
 
     function onDeferredLiquidityCheck(bytes memory encodedData) external {
+        // TODO check caller?
         LiquidationParams memory liqParams = abi.decode(encodedData, (LiquidationParams));
 
         IEulerLiquidation.LiquidationOpportunity memory liqOpp = IEulerLiquidation(liqParams.liquidationAddr).checkLiquidation(address(this), liqParams.violator, liqParams.underlying, liqParams.collateral);
@@ -73,35 +49,24 @@ contract LiquidationBot {
             //if (poolSize < liqOpp.yield) repay = poolSize * 1e18 / liqOpp.conversionRate;
         }
 
-        IEulerEToken collateralEToken = IEulerEToken(IEulerMarkets(liqParams.marketsAddr).underlyingToEToken(liqParams.collateral));
-        IEulerDToken underlyingDToken = IEulerDToken(IEulerMarkets(liqParams.marketsAddr).underlyingToDToken(liqParams.underlying));
-
         IEulerLiquidation(liqParams.liquidationAddr).liquidate(liqParams.violator, liqParams.underlying, liqParams.collateral, repay, 0);
 
-        uint owed = underlyingDToken.balanceOf(address(this));
-
-        collateralEToken.withdraw(0, type(uint).max);
-
-        uint myCollateralBalance = IERC20(liqParams.collateral).balanceOf(address(this));
-        IERC20(liqParams.collateral).approve(liqParams.swapRouter, type(uint).max);
-
-        ISwapRouter.ExactInputParams memory swapParams = ISwapRouter.ExactInputParams(
-            liqParams.swapPath,
-            address(this),
-            block.timestamp + 1, // FIXME: deadline
-            myCollateralBalance,
+        IEulerSwap(liqParams.swapAddr).swapAndRepayUni(
+            IEulerSwap.SwapUniExactOutputParams({
+                subAccountIdIn: 0,
+                subAccountIdOut: 0,
+                amountOut: 0,   // amountOut is ignored by swap and repay
+                amountInMaximum: type(uint).max,
+                deadline: block.timestamp, // FIXME: deadline
+                path: liqParams.swapPath
+            }),
             0
         );
+    }
 
-
-        ISwapRouter(liqParams.swapRouter).exactInput(swapParams);
-        //require(false, uint2str(IERC20(liqParams.underlying).balanceOf(address(this))));
-        //require(false, uint2str(IERC20(liqParams.collateral).balanceOf(address(this))));
-
-        IERC20(liqParams.underlying).approve(liqParams.eulerAddr, type(uint).max);
-        uint underlyingBalance = IERC20(liqParams.underlying).balanceOf(address(this));
-        
-        underlyingDToken.repay(0, type(uint).max);
+    function raw(address to, bytes calldata data, uint value) external onlyOwner {
+        (bool success, bytes memory result) = to.call{ value: value }(data);
+        if (!success) revertBytes(result);
     }
 
     function revertBytes(bytes memory errMsg) internal pure {
