@@ -99,11 +99,10 @@ contract LiquidationBot {
         //require(false, uint2str(IERC20(liqParams.collateral).balanceOf(address(this))));
 
         IERC20(liqParams.underlying).approve(liqParams.eulerAddr, type(uint).max);
-
+        uint underlyingBalance = IERC20(liqParams.underlying).balanceOf(address(this));
+        
         underlyingDToken.repay(0, type(uint).max);
     }
-
-
 
     function revertBytes(bytes memory errMsg) internal pure {
         if (errMsg.length > 0) {

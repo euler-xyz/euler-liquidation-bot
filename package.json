@@ -5,7 +5,11 @@
     "@uniswap/v3-periphery": "^1.1.1",
     "chai": "^4.3.4",
     "ethers": "^5.4.1",
-    "hardhat": "^2.4.3",
+    "euler-contracts": "file:../euler-contracts",
     "immer": "^9.0.5"
+  },
+  "devDependencies": {
+    "hardhat": "^2.7.0",
+    "hardhat-dependency-compiler": "^1.1.2"
   }
 }
