@@ -1,5 +1,5 @@
 const et = require('euler-contracts/test/lib/eTestLib.js').config(`${__dirname}/lib/eTestLib.config.js`);
-const { provisionUniswapPool, deposit, deployBot } = require('./lib/helpers');
+const { provisionUniswapPool, deposit, } = require('./lib/helpers');
 
 et.testSet({
     desc: "liquidation",
@@ -49,17 +49,7 @@ et.testSet({
             et.equals(r.collateralValue / r.liabilityValue, 1.09, 0.01);
         }, },
 
-        { call: 'tokens.TST.balanceOf', args: [ctx.wallet5.address], onResult: r => {
-            console.log('TST: ', r.toString());
-        }},
         { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST', dir: 'buy', amount: et.eth(10_000), priceLimit: 2.5 },
-        { call: 'tokens.TST.balanceOf', args: [ctx.wallet5.address], onResult: r => {
-            console.log('TST: ', r.toString());
-        }},
-
-        { callStatic: 'exec.getPriceFull', args: [ctx.contracts.tokens.TST.address], onResult: r => {
-            console.log('price: ', et.formatUnits(r.twap));
-        }},
 
         { action: 'checkpointTime', },
         { action: 'jumpTimeAndMine', time: 3600 * 30 * 100 },
@@ -72,17 +62,19 @@ et.testSet({
             onResult: r => {
                 et.equals(r.healthScore, 0.96, 0.001);
                 ctx.stash.repay = r.repay;
-                console.log('r.repay: ', r.repay.toString());
                 ctx.stash.yield = r.yield;
-                console.log('r.yield: ', r.yield.toString());
             },
         },
 
+        { action: 'snapshot'},
+
+        // liquidate with the bot
         { send: 'liquidationBot.liquidate', args: [async () => ({
             eulerAddr: ctx.contracts.euler.address,
             liquidationAddr: ctx.contracts.liquidation.address,
             execAddr: ctx.contracts.exec.address,
             swapAddr: ctx.contracts.swap.address,
+            marketsAddr: ctx.contracts.markets.address,
 
             swapPath: await ctx.encodeUniswapPath(['TST2/WETH', 'TST/WETH'], 'TST2', 'TST', true),
 
@@ -91,29 +83,44 @@ et.testSet({
             collateral: ctx.contracts.tokens.TST2.address,
         })], },
 
-        { call: 'eTokens.eTST.balanceOfUnderlying', args: [ctx.contracts.liquidationBot.address], onResult: r => {
-            console.log('TST: ', r.toString());
-        }},
-        { call: 'eTokens.eTST2.balanceOfUnderlying', args: [ctx.contracts.liquidationBot.address], onResult: r => {
-            console.log('TST2: ', r.toString());
-        }},
-
-        { call: 'eTokens.eTST.balanceOf', args: [ctx.contracts.liquidationBot.address], onResult: r => {
-            console.log('eTST: ', r.toString());
-        }},
-        { call: 'eTokens.eTST2.balanceOf', args: [ctx.contracts.liquidationBot.address], onResult: r => {
-            console.log('eTST2: ', r.toString());
-        }},
-
         { callStatic: 'liquidation.checkLiquidation', args: [ctx.wallet.address, ctx.wallet2.address, ctx.contracts.tokens.TST.address, ctx.contracts.tokens.TST2.address],
             onResult: r => {
                 et.equals(r.healthScore, 1.25, 0.001);
             },
         },
 
+        { action: 'revert' },
+
+        // manual liquidation
+        { action: 'sendBatch', deferLiquidityCheck: [ctx.wallet.address], batch: [
+            { send: 'liquidation.liquidate', args: [
+                ctx.wallet2.address,
+                ctx.contracts.tokens.TST.address,
+                ctx.contracts.tokens.TST2.address,
+                () => ctx.stash.repay,
+                0
+            ]},
+            { send: 'swap.swapAndRepayUni', args: [
+                async () => ({
+                    subAccountIdIn: 0,
+                    subAccountIdOut: 0,
+                    amountOut: 0,
+                    amountInMaximum: et.MaxUint256,
+                    deadline: 0,
+                    path: await ctx.encodeUniswapPath(['TST2/WETH', 'TST/WETH'], 'TST2', 'TST', true),
+                }),
+                0
+            ]},
+            { send: 'markets.exitMarket', args: [0, ctx.contracts.tokens.TST.address] },
+        ]},
+        
+        { callStatic: 'liquidation.checkLiquidation', args: [ctx.wallet.address, ctx.wallet2.address, ctx.contracts.tokens.TST.address, ctx.contracts.tokens.TST2.address],
+            onResult: r => {
+                et.equals(r.healthScore, 1.25, 0.001);
+            },
+        },
     ]
 })
-
 
 .run();
 

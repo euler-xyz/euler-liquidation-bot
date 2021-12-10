@@ -23,6 +23,7 @@ contract LiquidationBot {
         address eulerAddr;
         address liquidationAddr;
         address execAddr;
+        address marketsAddr;
         address swapAddr;
 
         bytes swapPath;
@@ -30,6 +31,12 @@ contract LiquidationBot {
         address violator;
         address underlying;
         address collateral;
+    }
+
+    uint someval;
+
+    function test() public {
+        someval = 1;    
     }
 
     function liquidate(LiquidationParams memory liqParams) external onlyOwner {
@@ -62,6 +69,8 @@ contract LiquidationBot {
             }),
             0
         );
+
+        IEulerMarkets(liqParams.marketsAddr).exitMarket(0, liqParams.underlying);
     }
 
     function raw(address to, bytes calldata data, uint value) external onlyOwner {
