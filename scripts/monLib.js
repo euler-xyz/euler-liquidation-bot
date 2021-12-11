@@ -1,6 +1,6 @@
 const WebSocket = require('ws');
 const {enablePatches, applyPatches} = require('immer');
-const fs = require("fs");
+const { BigNumber, utils } = ethers
 
 const EulerToolClient = require('./EulerToolClient.js');
 
@@ -13,7 +13,19 @@ let subsData = {};
 let showLogs;
 let signer;
 
+const cartesian = (...a) => a.reduce((a, b) => a.flatMap(d => b.map(e => [d, e].flat())));
+const filterResolved = (results, onErr) => results.map((r, i) => {
+    if (r.status === 'rejected') {
+        if (typeof onErr === 'function') onErr(i, r.reason);
+        return null;
+    }
+    return r.value;
+})
+.filter(Boolean);
+
 // TODO signers and owner
+// TODO EOA liquidation - checkLiquidation is async
+// TODO transfer all balance in bot
 
 async function main() {
     let factory = await ethers.getContractFactory('LiquidationBot');
@@ -87,56 +99,117 @@ async function process() {
                 break;
             }
         }
+    } catch (e) {
+        console.log('PROCESS FAILED:', e);
     } finally {
         inFlight = false;
     }
 }
 
 async function doLiquidation(act) {
-    let underlying;
-    let collateral;
+    const collaterals = act.markets.filter(m => m.liquidityStatus.collateralValue !== '0');
+    const underlyings = act.markets.filter(m => m.liquidityStatus.liabilityValue !== '0');
 
-    for (let market of act.markets) {
-        if (market.liquidityStatus.liabilityValue !== '0') {
-            log('market.liquidityStatus.liabilityValue: ', market.liquidityStatus.liabilityValue);
-            underlying = market;
-            break;
-        }
-    }
 
-    for (let market of act.markets) {
-        if (market.liquidityStatus.collateralValue !== '0') {
-            collateral = market;
-            break;
-        }
-    }
+    // console.log('cartesian(collateral, liabilities): ', cartesian(collaterals, underlyings));
 
-    let swapPath;
+    // TODO strategies
+    // TODO all settled?
+    const opportunities = await Promise.all(
+        cartesian(collaterals, underlyings).map(async ([collateral, underlying]) => {
+            return {
+                collateral,
+                underlying,
+                ...await pickUniswapLiquidation(act, collateral, underlying)
+            }
+        })
+    );
+
+    // console.log('opportunities: ', opportunities);
+    const best = opportunities.reduce((accu, o) => {
+        return o.yield.gt(accu.yield) ? o : accu;
+    }, { yield: 0});
+
+    if (best.yield === 0) throw `No liquidation opportunity found for ${act.account}`;
+
+    log(`DOING LIQUIDATION: repay ${best.underlying.symbol} for collateral ${best.collateral.symbol}`);
+
+    doUniswapLiquidation(act, best.collateral, best.underlying, best.swapPath);
+}
+
+async function pickUniswapLiquidation(act, collateral, underlying) {
+    const feeLevels = [500, 3000, 10000];
+    let paths;
 
     if (collateral.underlying.toLowerCase() === eulerAddresses.tokens.WETH.toLowerCase()) {
-        swapPath = encodePath([collateral.underlying, underlying.underlying], [3000]);
+        paths = feeLevels.map(fee => {
+            return encodePath([collateral.underlying, underlying.underlying], [fee]);
+        });
     } else {
-        swapPath = encodePath([underlying.underlying, eulerAddresses.tokens.WETH, collateral.underlying], [3000, 3000]);
+        // TODO explosion! try auto router, sdk
+        paths = cartesian(feeLevels, feeLevels).map(([feeIn, feeOut]) => {
+            return encodePath([underlying.underlying, eulerAddresses.tokens.WETH, collateral.underlying], [feeIn, feeOut]);
+        });
     }
+    // console.log('paths: ', paths);
 
-    log(`DOING LIQUIDATION: repay ${underlying.symbol} for collateral ${collateral.symbol}`);
+    let tests = await Promise.allSettled(
+        paths.map(async (swapPath) => {
+            return {
+                swapPath,
+                yield: await testUniswapLiquidation(act, collateral, underlying, swapPath)
+            };
+        })
+    );
+
+    // TODO retry failed or continue
+    // console.log('tests: ', tests);
     
-    let tx = await liquidationBotContract.liquidate({
-                        eulerAddr: eulerAddresses.euler,
-                        liquidationAddr: eulerAddresses.liquidation,
-                        execAddr: eulerAddresses.exec,
-                        marketsAddr: eulerAddresses.markets,
-                        swapAddr: eulerAddresses.swap,
+    tests = filterResolved(tests, (i, err) => {
+        log(`Failed uniswap test ${act}, ${collateral.symbol} / ${underlying.symbol}: ${paths[i]} ${err}`)
+    })
 
-                        swapPath,
 
-                        violator: act.account,
-                        underlying: underlying.underlying,
-                        collateral: collateral.underlying,
-                    });
+    const best = tests.reduce((accu, t) => {
+        return t.yield.gt(accu.yield) ? t : accu;
+    }, { swapPath: null, yield: 0 });
+
+    console.log(`Best path c: ${collateral.symbol} u: ${underlying.symbol} yield: ${best.yield.toString()} ${best.swapPath}`);
+    return best;
+}
+
+function uniswapLiquidationParams (act, collateral, underlying, swapPath) {
+    return {
+        eulerAddr: eulerAddresses.euler,
+        liquidationAddr: eulerAddresses.liquidation,
+        execAddr: eulerAddresses.exec,
+        marketsAddr: eulerAddresses.markets,
+        swapAddr: eulerAddresses.swap,
+
+        swapPath,
+
+        violator: act.account,
+        underlying: underlying.underlying,
+        collateral: collateral.underlying,
+    }
+}
+
+async function doUniswapLiquidation(act, collateral, underlying, swapPath) {
+    let tx = await liquidationBotContract.liquidate(
+        uniswapLiquidationParams(act, collateral, underlying, swapPath)
+    );
 
     let res = await tx.wait();
     log(res);
+    return res;
+}
+
+async function testUniswapLiquidation(act, collateral, underlying, swapPath) {
+    let res = await liquidationBotContract.callStatic.testLiquidation(
+        uniswapLiquidationParams(act, collateral, underlying, swapPath)
+    );
+    console.log(`Uniswap test yield: ${res.toString()} ${act.account}, c: ${collateral.symbol}, u: ${underlying.symbol}, ${swapPath}'`);
+    return res;
 }
 
 

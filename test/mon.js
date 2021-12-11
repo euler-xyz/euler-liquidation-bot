@@ -38,9 +38,8 @@ et.testSet({
         // wait for twap
         { action: 'checkpointTime', },
         { action: 'jumpTimeAndMine', time: 3600 * 30 },
-        () => {
-          config(ctx.contracts.liquidationBot, et.exportAddressManifest(ctx), false);
-        }
+
+        () => config(ctx.contracts.liquidationBot, et.exportAddressManifest(ctx), false)
     ],
 })
 
@@ -71,14 +70,13 @@ et.testSet({
             },
         },
 
-        async () => { await runConnector(ctx) },
+        () => runConnector(ctx),
 
         { callStatic: 'liquidation.checkLiquidation', args: [ctx.wallet.address, ctx.wallet2.address, ctx.contracts.tokens.TST.address, ctx.contracts.tokens.TST2.address],
             onResult: r => {
                 et.equals(r.healthScore, 1.25, 0.001);
             },
         },
-
     ]
 })
 

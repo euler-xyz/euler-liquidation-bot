@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "./IEuler.sol";
+import "./IERC20.sol";
 import "hardhat/console.sol";
 
 
@@ -71,6 +72,17 @@ contract LiquidationBot {
         );
 
         IEulerMarkets(liqParams.marketsAddr).exitMarket(0, liqParams.underlying);
+    }
+
+    function testLiquidation(LiquidationParams memory liqParams) external onlyOwner returns (uint) {
+        address eTokenAddr = IEulerMarkets(liqParams.marketsAddr).underlyingToEToken(liqParams.collateral);
+        uint prevBalance = IEulerEToken(eTokenAddr).balanceOf(address(this));
+
+        IEulerExec(liqParams.execAddr).deferLiquidityCheck(address(this), abi.encode(liqParams));
+        
+        uint balance = IEulerEToken(eTokenAddr).balanceOf(address(this));
+
+        return balance > prevBalance ? balance - prevBalance : 0;
     }
 
     function raw(address to, bytes calldata data, uint value) external onlyOwner {
