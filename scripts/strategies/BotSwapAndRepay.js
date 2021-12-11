@@ -1,4 +1,4 @@
-const { cartesian, filterResolved } = require("../utils");
+const { cartesian, filtreOutRejected } = require("../utils");
 
 class BotSwapAndRepay {
     constructor(act, collateral, underlying, eulerAddresses, liquidationBotContract) {
@@ -39,7 +39,7 @@ class BotSwapAndRepay {
         // TODO retry failed or continue
         // console.log('tests: ', tests);
         
-        tests = filterResolved(tests, (i, err) => {
+        tests = filtreOutRejected(tests, (i, err) => {
             // console.log(`Failed uniswap test ${this.act}, ${this.collateral.symbol} / ${this.underlying.symbol}: ${paths[i]} ${err}`)
         })
 
@@ -49,7 +49,7 @@ class BotSwapAndRepay {
         }, { swapPath: null, yield: 0 });
 
 
-        this.best = best.yield > 0 ? best : null;
+        this.best = best.yield.gt(0) ? best : null;
     }
 
     async exec() {

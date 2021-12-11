@@ -1,6 +1,6 @@
 const cartesian = (...a) => a.reduce((a, b) => a.flatMap(d => b.map(e => [d, e].flat())));
 
-const filterResolved = (results, onErr) => results.map((r, i) => {
+const filtreOutRejected = (results, onErr) => results.map((r, i) => {
     if (r.status === 'rejected') {
         if (typeof onErr === 'function') onErr(i, r.reason);
         return null;
@@ -11,5 +11,5 @@ const filterResolved = (results, onErr) => results.map((r, i) => {
 
 module.exports = {
   cartesian,
-  filterResolved,
+  filtreOutRejected,
 }

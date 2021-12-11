@@ -3,7 +3,7 @@ const {enablePatches, applyPatches} = require('immer');
 
 const strategies = require('./strategies');
 const EulerToolClient = require('./EulerToolClient.js');
-const { cartesian, filterResolved } = require('./utils')
+const { cartesian, filtreOutRejected } = require('./utils')
 
 enablePatches();
 
@@ -44,7 +44,6 @@ function log(...args) {
     if (showLogs) console.log(...args)
 }
 
-
 function doConnect() {
     let ec; ec = new EulerToolClient({
                    version: 'liqmon 1.0',
@@ -59,8 +58,8 @@ function doConnect() {
                    },
                 });
 
-    ec.sub({ query: { topic: "accounts", by: "healthScore", } }, (err, patch) => {
-        log('patch: ', JSON.stringify(patch, null, 2));
+    ec.sub({ query: { topic: "accounts", by: "healthScore", healthMax: 15000000} }, (err, patch) => {
+        // log('patch: ', JSON.stringify(patch, null, 2));
         if (err) {
             log(`ERROR from client: ${err}`);
             return;
@@ -99,6 +98,9 @@ async function process() {
 }
 
 async function doLiquidation(act) {
+    console.log('strategies: ', strategies);
+    const activeStrategies = [strategies.EOASwapAndRepay]; // TODO config
+    console.log('activeStrategies: ', activeStrategies);
     const collaterals = act.markets.filter(m => m.liquidityStatus.collateralValue !== '0');
     const underlyings = act.markets.filter(m => m.liquidityStatus.liabilityValue !== '0');
 
@@ -107,8 +109,9 @@ async function doLiquidation(act) {
 
     // TODO all settled?
     const opportunities = await Promise.all(
-        cartesian(collaterals, underlyings, strategies).map(
+        cartesian(collaterals, underlyings, activeStrategies).map(
             async ([collateral, underlying, Strategy]) => {
+                console.log('Strategy: ', Strategy);
                 const strategy = new Strategy(act, collateral, underlying, eulerAddresses, liquidationBotContract);
                 await strategy.findBest();
                 return strategy;
