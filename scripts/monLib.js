@@ -1,8 +1,9 @@
 const WebSocket = require('ws');
 const {enablePatches, applyPatches} = require('immer');
-const { BigNumber, utils } = ethers
 
+const strategies = require('./strategies');
 const EulerToolClient = require('./EulerToolClient.js');
+const { cartesian, filterResolved } = require('./utils')
 
 enablePatches();
 
@@ -13,15 +14,6 @@ let subsData = {};
 let showLogs;
 let signer;
 
-const cartesian = (...a) => a.reduce((a, b) => a.flatMap(d => b.map(e => [d, e].flat())));
-const filterResolved = (results, onErr) => results.map((r, i) => {
-    if (r.status === 'rejected') {
-        if (typeof onErr === 'function') onErr(i, r.reason);
-        return null;
-    }
-    return r.value;
-})
-.filter(Boolean);
 
 // TODO signers and owner
 // TODO EOA liquidation - checkLiquidation is async
@@ -33,7 +25,7 @@ async function main() {
         await (await factory.deploy()).deployed(),
         require('euler-contracts/euler-addresses.json'),
     )
-    log("liq bot contract deployed:", liquidationBotContract.address);
+    console.log("liq bot contract deployed:", liquidationBotContract.address);
 
     doConnect();
 }
@@ -94,7 +86,7 @@ async function process() {
         for (let act of Object.values(subsData.accounts.accounts)) {
             if (typeof(act) !== 'object') continue;
             if (act.healthScore < 1000000) {
-                log("VIOLATION DETECTED",act.account,act.healthScore);
+                log("VIOLATION DETECTED", act.account,act.healthScore);
                 await doLiquidation(act);
                 break;
             }
@@ -113,131 +105,34 @@ async function doLiquidation(act) {
 
     // console.log('cartesian(collateral, liabilities): ', cartesian(collaterals, underlyings));
 
-    // TODO strategies
     // TODO all settled?
     const opportunities = await Promise.all(
-        cartesian(collaterals, underlyings).map(async ([collateral, underlying]) => {
-            return {
-                collateral,
-                underlying,
-                ...await pickUniswapLiquidation(act, collateral, underlying)
+        cartesian(collaterals, underlyings, strategies).map(
+            async ([collateral, underlying, Strategy]) => {
+                const strategy = new Strategy(act, collateral, underlying, eulerAddresses, liquidationBotContract);
+                await strategy.findBest();
+                return strategy;
             }
-        })
+        )
     );
 
     // console.log('opportunities: ', opportunities);
-    const best = opportunities.reduce((accu, o) => {
-        return o.yield.gt(accu.yield) ? o : accu;
+    const bestStrategy = opportunities.reduce((accu, o) => {
+        return o.best && o.best.yield.gt(accu.yield) ? o : accu;
     }, { yield: 0});
 
-    if (best.yield === 0) throw `No liquidation opportunity found for ${act.account}`;
+    if (bestStrategy.best.yield === 0) throw `No liquidation opportunity found for ${act.account}`;
 
-    log(`DOING LIQUIDATION: repay ${best.underlying.symbol} for collateral ${best.collateral.symbol}`);
+    console.log('EXECUTING BEST STRATEGY');
+    bestStrategy.logBest();
 
-    doUniswapLiquidation(act, best.collateral, best.underlying, best.swapPath);
-}
-
-async function pickUniswapLiquidation(act, collateral, underlying) {
-    const feeLevels = [500, 3000, 10000];
-    let paths;
-
-    if (collateral.underlying.toLowerCase() === eulerAddresses.tokens.WETH.toLowerCase()) {
-        paths = feeLevels.map(fee => {
-            return encodePath([collateral.underlying, underlying.underlying], [fee]);
-        });
-    } else {
-        // TODO explosion! try auto router, sdk
-        paths = cartesian(feeLevels, feeLevels).map(([feeIn, feeOut]) => {
-            return encodePath([underlying.underlying, eulerAddresses.tokens.WETH, collateral.underlying], [feeIn, feeOut]);
-        });
-    }
-    // console.log('paths: ', paths);
-
-    let tests = await Promise.allSettled(
-        paths.map(async (swapPath) => {
-            return {
-                swapPath,
-                yield: await testUniswapLiquidation(act, collateral, underlying, swapPath)
-            };
-        })
-    );
-
-    // TODO retry failed or continue
-    // console.log('tests: ', tests);
-    
-    tests = filterResolved(tests, (i, err) => {
-        log(`Failed uniswap test ${act}, ${collateral.symbol} / ${underlying.symbol}: ${paths[i]} ${err}`)
-    })
-
-
-    const best = tests.reduce((accu, t) => {
-        return t.yield.gt(accu.yield) ? t : accu;
-    }, { swapPath: null, yield: 0 });
-
-    console.log(`Best path c: ${collateral.symbol} u: ${underlying.symbol} yield: ${best.yield.toString()} ${best.swapPath}`);
-    return best;
-}
-
-function uniswapLiquidationParams (act, collateral, underlying, swapPath) {
-    return {
-        eulerAddr: eulerAddresses.euler,
-        liquidationAddr: eulerAddresses.liquidation,
-        execAddr: eulerAddresses.exec,
-        marketsAddr: eulerAddresses.markets,
-        swapAddr: eulerAddresses.swap,
-
-        swapPath,
-
-        violator: act.account,
-        underlying: underlying.underlying,
-        collateral: collateral.underlying,
-    }
-}
-
-async function doUniswapLiquidation(act, collateral, underlying, swapPath) {
-    let tx = await liquidationBotContract.liquidate(
-        uniswapLiquidationParams(act, collateral, underlying, swapPath)
-    );
-
-    let res = await tx.wait();
-    log(res);
-    return res;
-}
-
-async function testUniswapLiquidation(act, collateral, underlying, swapPath) {
-    let res = await liquidationBotContract.callStatic.testLiquidation(
-        uniswapLiquidationParams(act, collateral, underlying, swapPath)
-    );
-    console.log(`Uniswap test yield: ${res.toString()} ${act.account}, c: ${collateral.symbol}, u: ${underlying.symbol}, ${swapPath}'`);
-    return res;
-}
-
-
-
-function encodePath(path, fees) {
-  const FEE_SIZE = 3
-
-  if (path.length != fees.length + 1) {
-    throw new Error('path/fee lengths do not match')
-  }
-
-  let encoded = '0x'
-  for (let i = 0; i < fees.length; i++) {
-    // 20 byte encoding of the address
-    encoded += path[i].slice(2)
-    // 3 byte encoding of the fee
-    encoded += fees[i].toString(16).padStart(2 * FEE_SIZE, '0')
-  }
-  // encode the final token
-  encoded += path[path.length - 1].slice(2)
-
-  return encoded.toLowerCase()
+    let res = await bestStrategy.exec();
+    // console.log('res: ', res);
 }
 
 
 module.exports = {
     main,
-    encodePath,
     process,
     config,
     setData,
