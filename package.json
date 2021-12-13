@@ -9,6 +9,7 @@
     "immer": "^9.0.5"
   },
   "devDependencies": {
+    "dotenv": "^10.0.0",
     "hardhat": "^2.7.0",
     "hardhat-dependency-compiler": "^1.1.2"
   }

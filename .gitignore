@@ -2,3 +2,4 @@
 /artifacts/
 /cache/
 /package-lock.json
+/.env

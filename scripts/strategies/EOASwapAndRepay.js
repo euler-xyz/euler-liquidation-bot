@@ -21,7 +21,8 @@ class EOASwapAndRepay {
 
     async findBest() {
         let paths;
-        let feeLevels = [500, 3000, 10000];
+        // let feeLevels = [500, 3000, 10000];
+        let feeLevels = [3000];
 
         let eTokenAddress = await this.ctx.contracts.markets.underlyingToEToken(this.collateralAddr);
         this.collateralEToken = await ethers.getContractAt('EToken', eTokenAddress);
@@ -47,8 +48,9 @@ class EOASwapAndRepay {
             });
         }
 
-        let repayFraction = 98;
-        while (!this.best && repayFraction > 0) {
+        let repayFraction = 2;
+        // while (!this.best && repayFraction > 0) {
+            console.log('liqOpp.repay: ', liqOpp.repay.toString());
             let repay = liqOpp.repay.mul(repayFraction).div(100);
 
             let tests = await Promise.allSettled(
@@ -75,7 +77,7 @@ class EOASwapAndRepay {
             this.best = best.yield.gt(0) ? best : null;
 
             repayFraction = Math.floor(repayFraction / 2);
-        }
+        // }
     }
 
     async exec() {
@@ -181,9 +183,14 @@ class EOASwapAndRepay {
                 ],
             },
         ]
-
-        let res = await this.ctx.contracts.exec.callStatic.batchDispatch(this.ctx.buildBatch(batchItems), [this.liquidator]);
-
+        try {
+            let res = await this.ctx.contracts.exec.callStatic.batchDispatch(this.ctx.buildBatch(batchItems), [this.liquidator]);
+            console.log('res: ', res);
+        } catch (e) {
+            console.log('FAAAAIL: ', e);
+        } finally {
+            process.exit()
+        }
         let decoded = await this.ctx.decodeBatch(batchItems, res);
 
         let balanceBefore = decoded[0][0];

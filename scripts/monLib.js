@@ -6,7 +6,7 @@ const hre = require('hardhat');
 const strategies = require('./strategies');
 const EulerToolClient = require('./EulerToolClient.js');
 const { cartesian } = require('./utils');
-const monConfig = require('../mon.config')[hre.network.name];
+const monConfig = require('../bot.config')[hre.network.name];
 
 enablePatches();
 
@@ -18,6 +18,7 @@ let ctx;
 // TODO signers and owner
 // TODO EOA liquidation - checkLiquidation is async
 // TODO transfer all balance in bot
+// TODO process accounts in parallel
 
 async function main() {
     config(await et.getTaskCtx()); // TODO extend with additional contracts (LiquidationBot) 
@@ -85,7 +86,8 @@ async function process() {
     try {
         for (let act of Object.values(subsData.accounts.accounts)) {
             if (typeof(act) !== 'object') continue;
-            if (act.healthScore < 1000000) {
+
+            if (act.healthScore < 1000000 && act.healthScore > 700000) {
                 log("VIOLATION DETECTED", act.account, act.healthScore);
                 await doLiquidation(act);
                 break;
