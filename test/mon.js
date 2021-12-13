@@ -39,7 +39,7 @@ et.testSet({
         { action: 'checkpointTime', },
         { action: 'jumpTimeAndMine', time: 3600 * 30 },
 
-        () => config(ctx.contracts.liquidationBot, et.exportAddressManifest(ctx), false)
+        () => config(ctx, false)
     ],
 })
 

@@ -1,18 +1,16 @@
 const WebSocket = require('ws');
 const {enablePatches, applyPatches} = require('immer');
+const et = require('euler-contracts/test/lib/eTestLib.js');
 
 const strategies = require('./strategies');
 const EulerToolClient = require('./EulerToolClient.js');
-const { cartesian, filtreOutRejected } = require('./utils')
+const { cartesian } = require('./utils');
 
 enablePatches();
 
-
-let liquidationBotContract;
-let eulerAddresses;
 let subsData = {};
 let showLogs;
-let signer;
+let ctx;
 
 
 // TODO signers and owner
@@ -20,20 +18,14 @@ let signer;
 // TODO transfer all balance in bot
 
 async function main() {
-    let factory = await ethers.getContractFactory('LiquidationBot');
-    config(
-        await (await factory.deploy()).deployed(),
-        require('euler-contracts/euler-addresses.json'),
-    )
-    console.log("liq bot contract deployed:", liquidationBotContract.address);
+    config(await et.getTaskCtx()); // TODO extend with additional contracts (LiquidationBot) 
 
     doConnect();
 }
 
-function config(liqBot, addresses, logs = true) {
-    liquidationBotContract = liqBot;
-    eulerAddresses = addresses;
+async function config(context, logs = true) {
     showLogs = logs;
+    ctx = context;
 }
 
 function setData(newData) {
@@ -47,7 +39,7 @@ function log(...args) {
 function doConnect() {
     let ec; ec = new EulerToolClient({
                    version: 'liqmon 1.0',
-                   endpoint: 'ws://localhost:8900',
+                   endpoint: 'wss://escan-ropsten.euler.finance',
                    WebSocket,
                    onConnect: () => {
                        log("CONNECTED");
@@ -58,7 +50,7 @@ function doConnect() {
                    },
                 });
 
-    ec.sub({ query: { topic: "accounts", by: "healthScore", healthMax: 15000000} }, (err, patch) => {
+    ec.sub({ query: { topic: "accounts", by: "healthScore", healthMax: 15000000, limit: 500} }, (err, patch) => {
         // log('patch: ', JSON.stringify(patch, null, 2));
         if (err) {
             log(`ERROR from client: ${err}`);
@@ -85,7 +77,7 @@ async function process() {
         for (let act of Object.values(subsData.accounts.accounts)) {
             if (typeof(act) !== 'object') continue;
             if (act.healthScore < 1000000) {
-                log("VIOLATION DETECTED", act.account,act.healthScore);
+                log("VIOLATION DETECTED", act.account, act.healthScore);
                 await doLiquidation(act);
                 break;
             }
@@ -98,21 +90,16 @@ async function process() {
 }
 
 async function doLiquidation(act) {
-    console.log('strategies: ', strategies);
     const activeStrategies = [strategies.EOASwapAndRepay]; // TODO config
-    console.log('activeStrategies: ', activeStrategies);
     const collaterals = act.markets.filter(m => m.liquidityStatus.collateralValue !== '0');
     const underlyings = act.markets.filter(m => m.liquidityStatus.liabilityValue !== '0');
 
-
-    // console.log('cartesian(collateral, liabilities): ', cartesian(collaterals, underlyings));
 
     // TODO all settled?
     const opportunities = await Promise.all(
         cartesian(collaterals, underlyings, activeStrategies).map(
             async ([collateral, underlying, Strategy]) => {
-                console.log('Strategy: ', Strategy);
-                const strategy = new Strategy(act, collateral, underlying, eulerAddresses, liquidationBotContract);
+                const strategy = new Strategy(act, collateral, underlying, ctx);
                 await strategy.findBest();
                 return strategy;
             }
@@ -121,16 +108,15 @@ async function doLiquidation(act) {
 
     // console.log('opportunities: ', opportunities);
     const bestStrategy = opportunities.reduce((accu, o) => {
-        return o.best && o.best.yield.gt(accu.yield) ? o : accu;
-    }, { yield: 0});
-
+        return o.best && o.best.yield.gt(accu.best.yield) ? o : accu;
+    }, { best: { yield: 0 }});
+    
     if (bestStrategy.best.yield === 0) throw `No liquidation opportunity found for ${act.account}`;
 
     console.log('EXECUTING BEST STRATEGY');
     bestStrategy.logBest();
 
-    let res = await bestStrategy.exec();
-    // console.log('res: ', res);
+    await bestStrategy.exec();
 }
 
 

@@ -3,11 +3,20 @@ require('hardhat-dependency-compiler');
 
 
 // Config
+let accounts = process.env.PRV_KEY ? { accounts: [process.env.PRV_KEY] } : {};
 
 module.exports = {
     networks: {
         hardhat: {
             hardfork: 'london',
+        },
+        ropsten: {
+            url: 'https://cc7e3c40266c4dd99caa9ae00a308681.ropsten.rpc.rivet.cloud/',
+            ...accounts,
+        },
+        mainnet: {
+            url: 'https://fbb217c5cb464dd98a5cd5c53d49eda4.eth.rpc.rivet.cloud/',
+            ...accounts,
         },
     },
 
