@@ -8,14 +8,14 @@ module.exports = {
     eulerscan: {
       ws: process.env.EULERSCAN_WS || 'wss://escan-ropsten.euler.finance',
       queryLimit: process.env.QUERY_LIMIT ? Number(process.env.QUERY_LIMIT) : 500,
-      healthMax: process.env.HEALTH_MAX ? Number(process.env.HEALTH_MAX) : 15000000,
+      healthMax: process.env.QUERY_HEALTH_MAX ? Number(process.env.QUERY_HEALTH_MAX) : 15000000,
     },
   },
   mainnet: {
     eulerscan: {
       ws: process.env.EULERSCAN_WS || 'wss://escan-mainnet.euler.finance',
       queryLimit: process.env.QUERY_LIMIT ? Number(process.env.QUERY_LIMIT) : 500,
-      healthMax: process.env.HEALTH_MAX ? Number(process.env.HEALTH_MAX) : 15000000,
+      healthMax: process.env.QUERY_HEALTH_MAX ? Number(process.env.QUERY_HEALTH_MAX) : 15000000,
     },
   },
 }

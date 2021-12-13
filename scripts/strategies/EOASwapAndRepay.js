@@ -21,8 +21,7 @@ class EOASwapAndRepay {
 
     async findBest() {
         let paths;
-        // let feeLevels = [500, 3000, 10000];
-        let feeLevels = [3000];
+        let feeLevels = [500, 3000, 10000];
 
         let eTokenAddress = await this.ctx.contracts.markets.underlyingToEToken(this.collateralAddr);
         this.collateralEToken = await ethers.getContractAt('EToken', eTokenAddress);
@@ -48,9 +47,8 @@ class EOASwapAndRepay {
             });
         }
 
-        let repayFraction = 2;
-        // while (!this.best && repayFraction > 0) {
-            console.log('liqOpp.repay: ', liqOpp.repay.toString());
+        let repayFraction = 98;
+        while (!this.best && repayFraction > 0) {
             let repay = liqOpp.repay.mul(repayFraction).div(100);
 
             let tests = await Promise.allSettled(
@@ -65,9 +63,8 @@ class EOASwapAndRepay {
 
             // TODO retry failed or continue
             tests = filterOutRejected(tests, (i, err) => {
-                console.log(`EOASwapAndRepay failed test ${this.violator}, c: ${this.collateralAddr} u: ${this.underlyingAddr} path: ${paths[i]} error: ${err}`)
+                // console.log(`EOASwapAndRepay failed test ${this.violator}, c: ${this.collateralAddr} u: ${this.underlyingAddr} path: ${paths[i]} error: ${err}`)
             })
-
 
             let best = tests.reduce((accu, t) => {
                 return t.yield.gt(accu.yield) ? t : accu;
@@ -77,7 +74,7 @@ class EOASwapAndRepay {
             this.best = best.yield.gt(0) ? best : null;
 
             repayFraction = Math.floor(repayFraction / 2);
-        // }
+        }
     }
 
     async exec() {
@@ -87,8 +84,8 @@ class EOASwapAndRepay {
             this.ctx.contracts.exec.batchDispatch(
                 this.ctx.buildBatch(this.buildLiqBatch(this.best.swapPath, this.best.repay)),
                 [this.liquidator],
+                ({...await this.ctx.txOpts(), gasLimit: 1200000})
             ),
-            await this.ctx.txOpts(),
         );
     }
 
@@ -182,15 +179,10 @@ class EOASwapAndRepay {
                     this.liquidator,
                 ],
             },
-        ]
-        try {
-            let res = await this.ctx.contracts.exec.callStatic.batchDispatch(this.ctx.buildBatch(batchItems), [this.liquidator]);
-            console.log('res: ', res);
-        } catch (e) {
-            console.log('FAAAAIL: ', e);
-        } finally {
-            process.exit()
-        }
+        ];
+
+        let res = await this.ctx.contracts.exec.callStatic.batchDispatch(this.ctx.buildBatch(batchItems), [this.liquidator]);
+
         let decoded = await this.ctx.decodeBatch(batchItems, res);
 
         let balanceBefore = decoded[0][0];
