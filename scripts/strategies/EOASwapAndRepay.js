@@ -63,7 +63,7 @@ class EOASwapAndRepay {
 
             // TODO retry failed or continue
             tests = filterOutRejected(tests, (i, err) => {
-                // console.log(`EOASwapAndRepay failed test ${this.violator}, c: ${this.collateralAddr} u: ${this.underlyingAddr} path: ${paths[i]} error: ${err}`)
+                console.log(`EOASwapAndRepay failed test ${this.violator}, c: ${this.collateralAddr} u: ${this.underlyingAddr} path: ${paths[i]} error: ${err}`)
             })
 
 
@@ -108,7 +108,7 @@ class EOASwapAndRepay {
 
         if (this.underlyingAddr === this.collateralAddr) {
             conversionItem = {
-                contract: underlying.eToken,
+                contract: this.collateralEToken,
                 method: 'burn',
                 args: [
                     0,

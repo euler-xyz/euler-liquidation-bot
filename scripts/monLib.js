@@ -1,10 +1,12 @@
 const WebSocket = require('ws');
 const {enablePatches, applyPatches} = require('immer');
 const et = require('euler-contracts/test/lib/eTestLib.js');
+const hre = require('hardhat');
 
 const strategies = require('./strategies');
 const EulerToolClient = require('./EulerToolClient.js');
 const { cartesian } = require('./utils');
+const monConfig = require('../mon.config')[hre.network.name];
 
 enablePatches();
 
@@ -39,7 +41,7 @@ function log(...args) {
 function doConnect() {
     let ec; ec = new EulerToolClient({
                    version: 'liqmon 1.0',
-                   endpoint: 'wss://escan-ropsten.euler.finance',
+                   endpoint: monConfig.eulerscan.ws,
                    WebSocket,
                    onConnect: () => {
                        log("CONNECTED");
@@ -50,7 +52,14 @@ function doConnect() {
                    },
                 });
 
-    ec.sub({ query: { topic: "accounts", by: "healthScore", healthMax: 15000000, limit: 500} }, (err, patch) => {
+    ec.sub({
+        query: {
+            topic: "accounts",
+            by: "healthScore",
+            healthMax: monConfig.eulerscan.healthMax || 15000000,
+            limit: monConfig.eulerscan.queryLimit || 10
+        },
+    }, (err, patch) => {
         // log('patch: ', JSON.stringify(patch, null, 2));
         if (err) {
             log(`ERROR from client: ${err}`);
