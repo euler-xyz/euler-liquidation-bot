@@ -80,7 +80,7 @@ class EOASwapAndRepay {
     async exec() {
         if (!this.best) throw 'No opportunity found yet!';
 
-        await et.taskUtils.runTx(
+        return et.taskUtils.runTx(
             this.ctx.contracts.exec.batchDispatch(
                 this.ctx.buildBatch(this.buildLiqBatch(this.best.swapPath, this.best.repay)),
                 [this.liquidator],
