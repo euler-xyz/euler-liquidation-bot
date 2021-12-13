@@ -2,6 +2,7 @@ const WebSocket = require('ws');
 const {enablePatches, applyPatches} = require('immer');
 const et = require('euler-contracts/test/lib/eTestLib.js');
 const hre = require('hardhat');
+const discord = require('./discordBot');
 
 const strategies = require('./strategies');
 const EulerToolClient = require('./EulerToolClient.js');
@@ -94,15 +95,16 @@ async function processAccounts() {
         for (let act of Object.values(subsData.accounts.accounts)) {
             if (typeof(act) !== 'object') continue;
 
-            console.log('act.healthScore: ', act.healthScore);
             if (act.healthScore < 1000000) {
                 log("VIOLATION DETECTED", act.account, act.healthScore);
+                discord(`VIOLATION DETECTED account: ${act.account} health: ${act.healthScore / 1000000}`)
                 await doLiquidation(act);
                 break;
             }
         }
     } catch (e) {
         console.log('PROCESS FAILED:', e);
+        discord('PROCESS FAILED:', e);
     } finally {
         inFlight = false;
     }
@@ -147,7 +149,9 @@ async function doLiquidation(act) {
     console.log('EXECUTING BEST STRATEGY');
     bestStrategy.logBest();
 
-    await bestStrategy.exec();
+    let tx = await bestStrategy.exec();
+
+    discord(`LIQUIDATION COMPLETED: ${tx.transactionHash}`);
 }
 
 async function getAccountLiquidity(account) {
