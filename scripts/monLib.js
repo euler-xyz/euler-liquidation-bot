@@ -95,7 +95,7 @@ async function processAccounts() {
         for (let act of Object.values(subsData.accounts.accounts)) {
             if (typeof(act) !== 'object') continue;
 
-            if (act.healthScore < 1000000) {
+            if (act.healthScore < 999000) {
                 log("VIOLATION DETECTED", act.account, act.healthScore);
                 discord(`VIOLATION DETECTED account: ${act.account} health: ${act.healthScore / 1000000}`)
                 await doLiquidation(act);
@@ -104,7 +104,7 @@ async function processAccounts() {
         }
     } catch (e) {
         console.log('PROCESS FAILED:', e);
-        discord('PROCESS FAILED:', e);
+        discord('PROCESS FAILED:', e.message);
     } finally {
         inFlight = false;
     }
