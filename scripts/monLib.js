@@ -100,7 +100,7 @@ async function processAccounts() {
             processedAccount = act;
             if (act.healthScore < 1000000) {
                 console.log('deferredAccounts[act.account] : ', deferredAccounts[act.account], Date.now() );
-                if (deferredAccounts[act.account] && deferredAccounts[act.account].until < Date.now()) {
+                if (deferredAccounts[act.account] && deferredAccounts[act.account].until > Date.now()) {
                     console.log(`Skipping deferred ${act.account}`);
                     continue;
                 }
