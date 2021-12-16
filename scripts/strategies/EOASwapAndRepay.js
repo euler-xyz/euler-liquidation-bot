@@ -94,8 +94,8 @@ class EOASwapAndRepay {
             console.log('EOASwapAndRepay: No opportunity found')
         } else {
             console.log(
-                `EOASwapAndRepay c: ${this.collateralAddr} u: ${this.underlyingAddr} repay: ${this.best.repay.toString()} `
-                 +`yield: ${this.best.yield.toString()} path ${this.best.swapPath}`
+                `EOASwapAndRepay c: ${this.collateralAddr}, u: ${this.underlyingAddr}, repay: ${this.best.repay.toString()} `
+                 +`yield: ${ethers.utils.formatEther(this.best.yield)} ETH, path ${this.best.swapPath}`
             );
         }
     }
@@ -191,7 +191,7 @@ class EOASwapAndRepay {
         if (balanceAfter.lte(balanceBefore)) throw `No yield ${repay} ${swapPath}`;
 
         let yieldCollateral = balanceAfter.sub(balanceBefore);
-        
+
         let collateralDecimals = await this.collateralToken.decimals();
 
         let yieldEth = yieldCollateral
