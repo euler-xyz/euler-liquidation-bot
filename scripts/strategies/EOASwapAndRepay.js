@@ -89,15 +89,11 @@ class EOASwapAndRepay {
         );
     }
 
-    logBest() {
-        if (!this.best) {
-            console.log('EOASwapAndRepay: No opportunity found')
-        } else {
-            console.log(
-                `EOASwapAndRepay c: ${this.collateralAddr}, u: ${this.underlyingAddr}, repay: ${this.best.repay.toString()} `
-                 +`yield: ${ethers.utils.formatEther(this.best.yield)} ETH, path ${this.best.swapPath}`
-            );
-        }
+    describe() {
+        return this.best
+            ? `EOASwapAndRepay c: ${this.collateralAddr}, u: ${this.underlyingAddr}, repay: ${this.best.repay.toString()} `
+                +`yield: ${ethers.utils.formatEther(this.best.yield)} ETH, path ${this.best.swapPath}`
+            : 'EOASwapAndRepay: No opportunity found';
     }
 
     // PRIVATE

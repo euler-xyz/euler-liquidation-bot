@@ -3,3 +3,4 @@
 /cache/
 /package-lock.json
 /.env
+/log.txt
