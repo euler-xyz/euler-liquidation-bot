@@ -6,5 +6,5 @@ hook.setUsername('Euler Liquidation BOT');
 hook.setAvatar(IMAGE_URL);
  
 module.exports = (alert) => {
-    if(process.env.DISCORD_ENABLED === 'true') hook.send(alert);
+    hook.send(alert);
 }

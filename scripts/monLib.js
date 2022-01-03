@@ -1,19 +1,19 @@
 const WebSocket = require('ws');
 const {enablePatches, applyPatches} = require('immer');
 const et = require('euler-contracts/test/lib/eTestLib.js');
-const hre = require('hardhat');
-const discord = require('./discordBot');
 
 const strategies = require('./strategies');
 const EulerToolClient = require('./EulerToolClient.js');
 const { cartesian } = require('./utils');
-const monConfig = require('../bot.config')[hre.network.name];
+const botConfig = require('../bot.config')[hre.network.name];
+const Reporter = require('./reporter');
 
 enablePatches();
 
 let subsData = {};
 let showLogs;
 let ctx;
+let reporter;
 
 let deferredAccounts = {}
 
@@ -25,6 +25,7 @@ let deferredAccounts = {}
 
 async function main() {
     config(await et.getTaskCtx()); // TODO extend with additional contracts (LiquidationBot)
+    reporter = new Reporter(botConfig.reporter);
 
     let designatedAccount = process.env.LIQUIDATE_ACCOUNT
     if (designatedAccount) {
@@ -51,7 +52,7 @@ function log(...args) {
 function doConnect() {
     let ec; ec = new EulerToolClient({
                    version: 'liqmon 1.0',
-                   endpoint: monConfig.eulerscan.ws,
+                   endpoint: botConfig.eulerscan.ws,
                    WebSocket,
                    onConnect: () => {
                        log("CONNECTED");
@@ -66,14 +67,13 @@ function doConnect() {
         query: {
             topic: "accounts",
             by: "healthScore",
-            healthMax: monConfig.eulerscan.healthMax || 15000000,
-            limit: monConfig.eulerscan.queryLimit || 10
+            healthMax: botConfig.eulerscan.healthMax || 1000000,
+            limit: botConfig.eulerscan.queryLimit || 500
         },
     }, (err, patch) => {
-        // log('patch: ', JSON.stringify(patch, null, 2));
-        console.log('patch');
+        // console.log('patch: ', JSON.stringify(patch, null, 2));
         if (err) {
-            log(`ERROR from client: ${err}`);
+            console.log(`ERROR from client: ${err}`);
             return;
         }
 
@@ -99,22 +99,18 @@ async function processAccounts() {
 
             processedAccount = act;
             if (act.healthScore < 1000000) {
-                console.log('deferredAccounts[act.account] : ', deferredAccounts[act.account], Date.now() );
                 if (deferredAccounts[act.account] && deferredAccounts[act.account].until > Date.now()) {
-                    console.log(`Skipping deferred ${act.account}`);
+                    // console.log(`Skipping deferred ${act.account}`);
                     continue;
                 }
 
-                log("VIOLATION DETECTED", act.account, act.healthScore);
-                discord(`VIOLATION DETECTED account: ${act.account} health: ${act.healthScore / 1000000}}`);
                 await doLiquidation(act);
                 break;
             }
         }
     } catch (e) {
-        console.log('PROCESS FAILED:', e);
-        discord('PROCESS FAILED:', e.message);
-        discord(`Deferring ${processedAccount.account} for 5 minutes`);
+        console.log('e: ', e);
+        reporter.log({ type: reporter.ERROR, account: processedAccount, error: e })
         deferAccount(processedAccount.account, 5 * 60000);
     } finally {
         inFlight = false;
@@ -157,31 +153,22 @@ async function doLiquidation(act) {
 
     if (bestStrategy.best.yield === 0) {
         deferAccount(act.account, 5 * 60000)
-        let msg = `No liquidation opportunity found for ${act.account}. Deferring for 5 minutes`;
-        discord(msg);
-        console.log(msg);
+        reporter.log({ type: reporter.NO_OPPORTUNITY_FOUND, account: act })
         return false;
     }
 
-    if (bestStrategy.best.yield.lt(ethers.utils.parseEther('0.05'))) {
+    if (bestStrategy.best.yield.lt(ethers.utils.parseEther(botConfig.minYield))) {
         deferAccount(act.account, 10 * 60000)
-        let msg = `Yield too low for ${act.account} (${ethers.utils.formatEther(bestStrategy.best.yield)} ETH, required 0.05). Deferring for 10 minutes`;
-        discord(msg);
-        console.log(msg);
+        reporter.log({ type: reporter.YIELD_TOO_LOW, account: act, yield: bestStrategy.best.yield, required: botConfig.minYield });
         return false;
     }
 
-    console.log('EXECUTING');
-    bestStrategy.logBest();
     let tx = await bestStrategy.exec();
 
-    discord(`LIQUIDATION COMPLETED: ${tx.transactionHash}`);
-
     let wallet = (await ethers.getSigners())[0];
-    let botEthBalance = await ethers.provider.getBalance(wallet.address)
-    let msg = `ETH BALANCE LEFT: ${ethers.utils.formatEther(botEthBalance)} ETH`;
-    console.log(msg);
-    discord(msg);
+    let botEthBalance = await ethers.provider.getBalance(wallet.address);
+
+    reporter.log({ type: reporter.LIQUIDATION, account: act, tx, strategy: bestStrategy.describe(), balanceLeft: botEthBalance });
     return true;
 }
 
