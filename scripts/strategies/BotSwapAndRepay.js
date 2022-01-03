@@ -1,5 +1,10 @@
-const { cartesian, filtreOutRejected } = require("../utils");
+const { cartesian, filterOutRejected } = require("../utils");
+const hre = require('hardhat')
 
+const WETH = {
+    'ropsten': '0xc778417E063141139Fce010982780140Aa0cD5Ab',
+    'mainnet': '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+}[hre.network.name];
 class BotSwapAndRepay {
     constructor(act, collateral, underlying, eulerAddresses, liquidationBotContract) {
         this.eulerAddresses = eulerAddresses;
@@ -15,14 +20,14 @@ class BotSwapAndRepay {
         const feeLevels = [500, 3000, 10000];
         let paths;
 
-        if (this.collateral.underlying.toLowerCase() === this.eulerAddresses.tokens.WETH.toLowerCase()) {
+        if (this.collateral.underlying.toLowerCase() === WETH.toLowerCase()) {
             paths = feeLevels.map(fee => {
                 return this.encodePath([collateral.underlying, underlying.underlying], [fee]);
             });
         } else {
             // TODO explosion! try auto router, sdk
             paths = cartesian(feeLevels, feeLevels).map(([feeIn, feeOut]) => {
-                return this.encodePath([this.underlying.underlying, this.eulerAddresses.tokens.WETH, this.collateral.underlying], [feeIn, feeOut]);
+                return this.encodePath([this.underlying.underlying, WETH, this.collateral.underlying], [feeIn, feeOut]);
             });
         }
         // console.log('paths: ', paths);
@@ -39,7 +44,7 @@ class BotSwapAndRepay {
         // TODO retry failed or continue
         // console.log('tests: ', tests);
         
-        tests = filtreOutRejected(tests, (i, err) => {
+        tests = filterOutRejected(tests, (i, err) => {
             // console.log(`Failed uniswap test ${this.act}, ${this.collateral.symbol} / ${this.underlying.symbol}: ${paths[i]} ${err}`)
         })
 

@@ -1,122 +1,120 @@
-const { cartesian, filtreOutRejected } = require("../utils");
+let { cartesian, filterOutRejected } = require("../utils");
+const et = require('euler-contracts/test/lib/eTestLib.js');
 
 class EOASwapAndRepay {
-    constructor(act, collateral, underlying, eulerAddresses, liquidationBotContract) {
-        this.eulerAddresses = eulerAddresses;
-        this.bot = liquidationBotContract;
-        this.act = act;
-        this.collateral = collateral;
-        this.underlying = underlying;
-        this.best = { yield: 0};
+    constructor(act, collateral, underlying, ctx) {
+        this.ctx = ctx;
+        this.violator = act.account;
+        this.liquidator = ctx.wallet.address;
+        this.collateralAddr = collateral.underlying.toLowerCase();
+        this.underlyingAddr = underlying.underlying.toLowerCase();
+        this.refAsset = 
+            (
+                ctx.tokenSetup.riskManagerSettings &&
+                ctx.tokenSetup.riskManagerSettings.referenceAsset &&
+                ctx.tokenSetup.riskManagerSettings.referenceAsset.toLowerCase()
+            )
+            || ctx.contracts.tokens.WETH.address; // during tests
+        this.best = null;
         this.name = 'EOASwapAndRepay';
-
     }
 
     async findBest() {
         let paths;
-        const feeLevels = [500, 3000, 10000];
+        let feeLevels = [500, 3000, 10000];
 
-        // TODO create context with all instances
-        this.execContract = await ethers.getContractAt('Exec', this.eulerAddresses.exec);
-        this.swapContract = await ethers.getContractAt('Swap', this.eulerAddresses.swap);
-        this.liquidationContract = await ethers.getContractAt('Liquidation', this.eulerAddresses.liquidation);
-        this.marketsContract = await ethers.getContractAt('Markets', this.eulerAddresses.markets);
+        let eTokenAddress = await this.ctx.contracts.markets.underlyingToEToken(this.collateralAddr);
+        this.collateralEToken = await ethers.getContractAt('EToken', eTokenAddress);
+        this.collateralToken = await et.taskUtils.lookupToken(this.ctx, this.collateralAddr);
 
-        const eTokenAddress = await this.marketsContract.underlyingToEToken(this.collateral.underlying);
-        this.collateralETokenContract = await ethers.getContractAt('EToken', eTokenAddress);
-
-        const wallets = await ethers.getSigners();
-        this.liquidator = wallets[0].address;
-
-        const liqOpp = await this.liquidationContract.callStatic.checkLiquidation(
+        let liqOpp = await this.ctx.contracts.liquidation.callStatic.checkLiquidation(
             this.liquidator,
-            this.act.account,
-            this.underlying.underlying,
-            this.collateral.underlying,
+            this.violator,
+            this.underlyingAddr,
+            this.collateralAddr,
         );
 
         if (liqOpp.repay.eq(0)) return;
-        this.repay = liqOpp.repay.mul(9).div(10);
 
-
-
-        if (this.collateral.underlying.toLowerCase() === this.eulerAddresses.tokens.WETH.toLowerCase()) {
+        if ([this.collateralAddr, this.underlyingAddr].includes(this.refAsset)) {
             paths = feeLevels.map(fee => {
-                return this.encodePath([collateral.underlying, underlying.underlying], [fee]);
+                return this.encodePath([this.underlyingAddr, this.collateralAddr], [fee]);
             });
         } else {
             // TODO explosion! try auto router, sdk
             paths = cartesian(feeLevels, feeLevels).map(([feeIn, feeOut]) => {
-                return this.encodePath([this.underlying.underlying, this.eulerAddresses.tokens.WETH, this.collateral.underlying], [feeIn, feeOut]);
+                return this.encodePath([this.underlyingAddr, this.refAsset, this.collateralAddr], [feeIn, feeOut]);
             });
         }
 
+        let repayFraction = 98;
+        while (!this.best && repayFraction > 0) {
+            let repay = liqOpp.repay.mul(repayFraction).div(100);
 
-        let tests = await Promise.allSettled(
-            paths.map(async (swapPath) => {
-                return {
-                    swapPath,
-                    yield: await this.testLiquidation(swapPath)
-                };
+            let tests = await Promise.allSettled(
+                paths.map(async (swapPath) => {
+                    return {
+                        swapPath,
+                        repay,
+                        yield: await this.testLiquidation(swapPath, repay)
+                    };
+                })
+            );
+
+            // TODO retry failed or continue
+            tests = filterOutRejected(tests, (i, err) => {
+                // console.log(`EOASwapAndRepay failed test ${this.violator}, c: ${this.collateralAddr} u: ${this.underlyingAddr} path: ${paths[i]} error: ${err}`)
             })
-        );
 
-        // TODO retry failed or continue
-        // console.log('tests: ', tests);
-        
-        tests = filtreOutRejected(tests, (i, err) => {
-            // throw err;
-            // console.log(`EOASwapAndRepay failed test ${this.act}, c: ${this.collateral.symbol} u: ${this.underlying.symbol} path: ${paths[i]} error: ${err}`)
-        })
+            let best = tests.reduce((accu, t) => {
+                return t.yield.gt(accu.yield) ? t : accu;
+            }, { swapPath: null, yield: ethers.BigNumber.from(0) });
 
 
-        const best = tests.reduce((accu, t) => {
-            return t.yield.gt(accu.yield) ? t : accu;
-        }, { swapPath: null, yield: ethers.BigNumber.from(0) });
+            this.best = best.yield.gt(0) ? best : null;
 
-
-        this.best = best.yield.gt(0) ? best : null;
+            repayFraction = Math.floor(repayFraction / 2);
+        }
     }
 
     async exec() {
         if (!this.best) throw 'No opportunity found yet!';
-        
-        let tx = await this.execContract.batchDispatch(
-            this.createBatch(this.best.swapPath),
-            [this.liquidator],
-        );
 
-        let res = await tx.wait();
-        return res;
+        return et.taskUtils.runTx(
+            this.ctx.contracts.exec.batchDispatch(
+                this.ctx.buildBatch(this.buildLiqBatch(this.best.swapPath, this.best.repay)),
+                [this.liquidator],
+                ({...await this.ctx.txOpts(), gasLimit: 1200000})
+            ),
+        );
     }
 
-    logBest() {
-        if (!this.best) {
-            console.log('EOASwapAndRepay: No opportunity found')
-        } else {
-            console.log(`EOASwapAndRepay c: ${this.collateral.symbol} u: ${this.underlying.symbol} yield: ${this.best.yield.toString()} path ${this.best.swapPath}`);
-        }
+    describe() {
+        return this.best
+            ? `EOASwapAndRepay c: ${this.collateralAddr}, u: ${this.underlyingAddr}, repay: ${this.best.repay.toString()} `
+                +`yield: ${ethers.utils.formatEther(this.best.yield)} ETH, path ${this.best.swapPath}`
+            : 'EOASwapAndRepay: No opportunity found';
     }
 
     // PRIVATE
 
-    createBatch(swapPath) {
-        return [
-            {
-                allowError: false,
-                proxyAddr: this.liquidationContract.address,
-                data: this.liquidationContract.interface.encodeFunctionData("liquidate", [
-                    this.act.account,
-                    this.underlying.underlying,
-                    this.collateral.underlying,
-                    this.repay,
-                    0
-                ])
-            },
-            {
-                allowError: false,
-                proxyAddr: this.swapContract.address,
-                data: this.swapContract.interface.encodeFunctionData("swapAndRepayUni", [
+    buildLiqBatch(swapPath, repay) {
+        let conversionItem;
+
+        if (this.underlyingAddr === this.collateralAddr) {
+            conversionItem = {
+                contract: this.collateralEToken,
+                method: 'burn',
+                args: [
+                    0,
+                    ethers.constants.MaxUint256,
+                ],
+            };
+        } else {
+            conversionItem = {
+                contract: 'swap',
+                method: 'swapAndRepayUni',
+                args: [
                     {
                         subAccountIdIn: 0,
                         subAccountIdOut: 0,
@@ -125,71 +123,99 @@ class EOASwapAndRepay {
                         deadline: 0, // FIXME!
                         path: swapPath,
                     },
-                    0
-                ]),
-            },
-            {
-                allowError: false,
-                proxyAddr: this.marketsContract.address,
-                data: this.marketsContract.interface.encodeFunctionData("exitMarket", [
                     0,
-                    this.underlying.underlying,
-                ]),
+                ],
+            };
+        }
+        return [
+            {
+                contract: 'liquidation',
+                method: 'liquidate',
+                args: [
+                    this.violator,
+                    this.underlyingAddr,
+                    this.collateralAddr,
+                    repay,
+                    0,
+                ],
+            },
+            conversionItem,
+            {
+                contract: 'markets',
+                method: 'exitMarket',
+                args: [
+                    0,
+                    this.underlyingAddr,
+                ],
             },
         ];
     }
 
-
-
-    async testLiquidation(swapPath) {
-        const batch = [
+    async testLiquidation(swapPath, repay) {
+        let batchItems = [
             {
-                allowError: false,
-                proxyAddr: this.collateralETokenContract.address,
-                data: this.collateralETokenContract.interface.encodeFunctionData("balanceOf", [this.liquidator]),
+                contract: this.collateralEToken,
+                method: 'balanceOfUnderlying',
+                args: [
+                    this.liquidator,
+                ]
             },
-            ...this.createBatch(swapPath),
+            ...this.buildLiqBatch(swapPath, repay),
             {
-                allowError: false,
-                proxyAddr: this.collateralETokenContract.address,
-                data: this.collateralETokenContract.interface.encodeFunctionData("balanceOf", [this.liquidator]),
+                contract: 'exec',
+                method: 'getPriceFull',
+                args: [
+                    this.collateralAddr,
+                ],
             },
-        ]
+            {
+                contract: this.collateralEToken,
+                method: 'balanceOfUnderlying',
+                args: [
+                    this.liquidator,
+                ],
+            },
+        ];
 
-        let res = await this.execContract.callStatic.batchDispatch(batch, [this.liquidator]);
+        let res = await this.ctx.contracts.exec.callStatic.batchDispatch(this.ctx.buildBatch(batchItems), [this.liquidator]);
 
-        res.forEach(r => {
-            if (!r.success) throw `Test call failed! path: ${swapPath}, e: ${r.result}`;
-        })
-        const balanceBefore = this.collateralETokenContract.interface.decodeFunctionResult('balanceOf', res[0].result)[0];
-        const balanceAfter = this.collateralETokenContract.interface.decodeFunctionResult('balanceOf', res[4].result)[0];
+        let decoded = await this.ctx.decodeBatch(batchItems, res);
 
-        const finalYield = balanceAfter.sub(balanceBefore);
+        let balanceBefore = decoded[0][0];
+        let balanceAfter = decoded[decoded.length - 1][0];
 
-        if (finalYield.lt(0)) throw `Negative yeald! ${swapPath}`
-        return finalYield;
+        if (balanceAfter.lte(balanceBefore)) throw `No yield ${repay} ${swapPath}`;
+
+        let yieldCollateral = balanceAfter.sub(balanceBefore);
+
+        let collateralDecimals = await this.collateralToken.decimals();
+
+        let yieldEth = yieldCollateral
+            .mul(ethers.BigNumber.from(10).pow(18 - collateralDecimals))
+            .mul(decoded[decoded.length - 2].currPrice).div(et.c1e18);
+
+        return yieldEth;
     }
 
     encodePath(path, fees) {
-        const FEE_SIZE = 3
+        let FEE_SIZE = 3;
     
         if (path.length != fees.length + 1) {
-        throw new Error('path/fee lengths do not match')
+            throw new Error('path/fee lengths do not match');
         }
     
-        let encoded = '0x'
+        let encoded = '0x';
         for (let i = 0; i < fees.length; i++) {
-        // 20 byte encoding of the address
-        encoded += path[i].slice(2)
-        // 3 byte encoding of the fee
-        encoded += fees[i].toString(16).padStart(2 * FEE_SIZE, '0')
+            // 20 byte encoding of the address
+            encoded += path[i].slice(2);
+            // 3 byte encoding of the fee
+            encoded += fees[i].toString(16).padStart(2 * FEE_SIZE, '0');
         }
         // encode the final token
-        encoded += path[path.length - 1].slice(2)
+        encoded += path[path.length - 1].slice(2);
     
-        return encoded.toLowerCase()
+        return encoded.toLowerCase();
     }
 }
 
 module.exports = EOASwapAndRepay;
-
