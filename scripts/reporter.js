@@ -19,9 +19,14 @@ module.exports = class {
     report() {
         const countEvent = (events, type) => events.filter(e => e.type === type).length;
         let rep = Object.entries(this.nextReport).map(([account, events]) => {
+            const yieldTooLowCount = countEvent(events, this.YIELD_TOO_LOW)
+            let latestYield = ''
+            if (yieldTooLowCount) {
+                latestYield = events.filter(e => e.type === this.YIELD_TOO_LOW).pop().yield
+            }
             let msg = '';
             msg = `${account} HS: ${events[events.length - 1].account.healthScore / 1000000} `;
-            msg += `Yield too low: ${countEvent(events, this.YIELD_TOO_LOW)} `;
+            msg += `Yield too low: ${yieldTooLowCount}${yieldTooLowCount && ` (${ethers.utils.formatEther(latestYield)}) ` }`;
             msg += `No opportunity found: ${countEvent(events, this.NO_OPPORTUNITY_FOUND)} `;
             msg += `Liquidation: ${countEvent(events, this.LIQUIDATION)} `;
             msg += `Error: ${countEvent(events, this.ERROR)} `;
