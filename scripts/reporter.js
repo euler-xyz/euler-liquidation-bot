@@ -65,7 +65,7 @@ module.exports = class {
             case this.NO_OPPORTUNITY_FOUND:
                 return `${msg} No liquidation opportunity found`;
             case this.ERROR:
-                return `${msg} ERROR ${event.error}`;
+                return `${msg} ERROR ${event.error} strategy: ${event.strategy}`;
             case this.LIQUIDATION:
                 return `${msg} LIQUIDATION COMPLETED ${event.tx.transactionHash} balance left: ${ethers.utils.formatEther(event.balanceLeft)} ${event.strategy}`;
         }
