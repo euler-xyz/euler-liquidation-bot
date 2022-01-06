@@ -15,7 +15,8 @@ let showLogs;
 let ctx;
 let reporter;
 
-let deferredAccounts = {}
+let deferredAccounts = {};
+let bestStrategy;
 
 // TODO signers and owner
 // TODO EOA liquidation - checkLiquidation is async
@@ -110,10 +111,11 @@ async function processAccounts() {
         }
     } catch (e) {
         console.log('e: ', e);
-        reporter.log({ type: reporter.ERROR, account: processedAccount, error: e })
+        reporter.log({ type: reporter.ERROR, account: processedAccount, error: e, strategy: bestStrategy && bestStrategy.describe() })
         deferAccount(processedAccount.account, 5 * 60000);
     } finally {
         inFlight = false;
+        bestStrategy = null;
     }
 }
 
@@ -147,7 +149,7 @@ async function doLiquidation(act) {
     );
 
     // console.log('opportunities: ', opportunities);
-    const bestStrategy = opportunities.reduce((accu, o) => {
+    bestStrategy = opportunities.reduce((accu, o) => {
         return o.best && o.best.yield.gt(accu.best.yield) ? o : accu;
     }, { best: { yield: 0 }});
 
