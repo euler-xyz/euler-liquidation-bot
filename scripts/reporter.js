@@ -51,7 +51,7 @@ module.exports = class {
         this.nextReport[event.account.account].push(event);
 
         if ([this.LIQUIDATION, this.ERROR].includes(event.type)) {
-            discord(this.describeEvent(event));
+            discord('@here ' + this.describeEvent(event));
         }
 
         fs.appendFileSync(this.logPath, this.describeEvent(event) + '\n');
