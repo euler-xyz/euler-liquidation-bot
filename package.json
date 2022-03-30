@@ -3,16 +3,18 @@
     "@nomiclabs/hardhat-ethers": "^2.0.2",
     "@nomiclabs/hardhat-waffle": "^2.0.1",
     "@uniswap/v3-periphery": "^1.1.1",
+    "@uniswap/v3-sdk": "^3.8.2",
     "chai": "^4.3.4",
     "discord-webhook-node": "^1.1.8",
     "ethers": "^5.4.1",
-    "euler-contracts": "file:../euler-contracts",
     "immer": "^9.0.5"
   },
   "devDependencies": {
     "dotenv": "^10.0.0",
     "ethereum-waffle": "^3.3.0",
+    "euler-contracts": "github:euler-xyz/euler-contracts",
     "hardhat": "^2.7.0",
-    "hardhat-dependency-compiler": "^1.1.2"
+    "hardhat-dependency-compiler": "^1.1.2",
+    "solidity-coverage": "^0.7.20"
   }
 }
