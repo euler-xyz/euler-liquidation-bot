@@ -13,7 +13,7 @@ enablePatches();
 let subsData = {};
 let showLogs;
 let ctx;
-let reporter;
+let reporter = { log: () => {} };
 
 let deferredAccounts = {};
 let bestStrategy;

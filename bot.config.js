@@ -24,4 +24,7 @@ module.exports = {
     },
     minYield: process.env.MIN_YIELD || '0.05',
   },
+  hardhat: {
+    minYield: process.env.MIN_YIELD || '0.05',
+  }
 }
