@@ -4,7 +4,7 @@ const { runConnector } = require('./lib/botTestLib');
 const { config } = require('../scripts/monLib')
 
 et.testSet({
-    desc: "liquidation",
+    desc: "eoa liquidation",
     fixture: "testing-real-uniswap-activated",
 
     preActions: ctx => [

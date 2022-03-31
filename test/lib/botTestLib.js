@@ -1,5 +1,5 @@
 const et = require('euler-contracts/test/lib/eTestLib.js');
-const { setData, process } = require('../../scripts/monLib');
+const { setData, processAccounts } = require('../../scripts/monLib');
 
 const deploy = async (ctx) => {
   const liquidationBotFactory = await ethers.getContractFactory('LiquidationBot');
@@ -46,7 +46,7 @@ const runConnector = async (ctx) => {
   const data = await eulerscanData([ctx.wallet.address, ctx.wallet2.address]);
 
   setData(data);
-  await process();
+  await processAccounts();
 }
 
 module.exports = {

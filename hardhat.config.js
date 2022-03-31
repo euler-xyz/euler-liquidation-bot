@@ -66,6 +66,8 @@ module.exports = {
             'euler-contracts/contracts/test/TestERC20.sol',
             'euler-contracts/contracts/test/TestModule.sol',
             'euler-contracts/contracts/views/EulerGeneralView.sol',
+            'euler-contracts/contracts/mining/EulDistributor.sol',
+            'euler-contracts/contracts/mining/EulStakes.sol',
         ],
     }
 };

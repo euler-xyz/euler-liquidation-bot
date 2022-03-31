@@ -2,7 +2,7 @@ const et = require('euler-contracts/test/lib/eTestLib.js').config(`${__dirname}/
 const { provisionUniswapPool, deposit, } = require('./lib/helpers');
 
 et.testSet({
-    desc: "liquidation",
+    desc: "bot contract",
     fixture: "testing-real-uniswap-activated",
 
     preActions: ctx => [
