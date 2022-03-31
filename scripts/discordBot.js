@@ -1,10 +1,14 @@
 const { Webhook } = require('discord-webhook-node');
-const hook = new Webhook(process.env.DISCORD_HOOK);
- 
-const IMAGE_URL = 'https://www.euler.finance/static/media/EF_logo__Euler_finance_euler-bg.2fc2705c.svg';
-hook.setUsername('Euler Liquidation BOT');
-hook.setAvatar(IMAGE_URL);
- 
+let hook;
+const hookUrl = process.env.DISCORD_WEBHOOK;
+const avatarUrl = process.env.DISCORD_AVATAR_URL
+
+if (hookUrl) {
+    hook = new Webhook(hookUrl)
+    hook.setUsername('Euler Liquidation BOT');
+    if (avatarUrl) hook.setAvatar(avatarUrl);
+}
+
 module.exports = (alert) => {
-    hook.send(alert);
+    if (hook) hook.send(alert);
 }

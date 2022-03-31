@@ -1,6 +1,6 @@
 require("@nomiclabs/hardhat-waffle");
 require('hardhat-dependency-compiler');
-
+require('dotenv').config();
 
 // Config
 let accounts = process.env.PRV_KEY ? { accounts: [process.env.PRV_KEY] } : {};
@@ -11,11 +11,11 @@ module.exports = {
             hardfork: 'london',
         },
         ropsten: {
-            url: 'https://cc7e3c40266c4dd99caa9ae00a308681.ropsten.rpc.rivet.cloud/',
+            url: process.env.ROPSTEN_JSON_RPC_URL,
             ...accounts,
         },
         mainnet: {
-            url: 'https://fbb217c5cb464dd98a5cd5c53d49eda4.eth.rpc.rivet.cloud/',
+            url: process.env.MAINNET_JSON_RPC_URL,
             ...accounts,
         },
     },
@@ -50,6 +50,7 @@ module.exports = {
             'euler-contracts/contracts/modules/interest-rate-models/IRMClassMajor.sol',
             'euler-contracts/contracts/modules/interest-rate-models/IRMClassMidCap.sol',
             'euler-contracts/contracts/modules/interest-rate-models/IRMClassStable.sol',
+            'euler-contracts/contracts/modules/interest-rate-models/IRMClassMega.sol',
             'euler-contracts/contracts/modules/interest-rate-models/test/IRMZero.sol',
             'euler-contracts/contracts/modules/interest-rate-models/test/IRMFixed.sol',
             'euler-contracts/contracts/modules/interest-rate-models/test/IRMLinear.sol',
