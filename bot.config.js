@@ -19,7 +19,7 @@ module.exports = {
       healthMax: process.env.QUERY_HEALTH_MAX ? Number(process.env.QUERY_HEALTH_MAX) : 1000000,
     },
     reporter: {
-      interval: process.env.REPORTER_INTERVAL ? Number(process.env.REPORTER_INTERVAL) : 60 * 60 * 1000,
+      interval: process.env.REPORTER_INTERVAL ? Number(process.env.REPORTER_INTERVAL) : 60 * 60,
       logPath: process.env.REPORTER_LOG_PATH || './log.txt',
     },
     minYield: process.env.MIN_ETH_YIELD || '0.05',

@@ -12,7 +12,7 @@ module.exports = class {
         if (config) {
             this.logPath = config.logPath;
             this.nextReport = {};
-            setInterval(() => this.report(), config.interval);
+            setInterval(() => this.report(), config.interval * 1000);
         }
     }
 

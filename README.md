@@ -18,7 +18,6 @@ Configuration through `.env` file:
 
 Optionally the bot can be configured to push reports to Discord
 - `DISCORD_WEBHOOK` - Discord webhook URL
-- `DISCORD_AVATAR_URL` - Discord bot avatar URL
 - `REPORTER_INTERVAL` - reporting interval in seconds
 
 ### Running
