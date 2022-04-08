@@ -23,7 +23,7 @@ Optionally the bot can be configured to push reports to Discord
 ### Running
 
 ```bash
-npx hardhat run scripts/mon.js --network mainnet
+npm start
 ```
 
 ### Tests
