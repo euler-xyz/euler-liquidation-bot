@@ -40,7 +40,7 @@ module.exports = class {
             let buff = []
             const parts = [];
             rep.forEach(r => {
-                if ([...buff, r].join('\n').length < 300) {
+                if ([...buff, r].join('\n').length < 2000) {
                     buff.push(r);
                 } else {
                     parts.push([...buff]);
