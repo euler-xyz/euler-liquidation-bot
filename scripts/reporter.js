@@ -16,7 +16,7 @@ module.exports = class {
         }
     }
 
-    report() {
+    async report() {
         const countEvent = (events, type) => events.filter(e => e.type === type).length;
         let rep = Object.entries(this.nextReport).map(([account, events]) => {
             const yieldTooLowCount = countEvent(events, this.YIELD_TOO_LOW)
@@ -33,7 +33,26 @@ module.exports = class {
             return msg;
         })
 
-        discord(rep.length ? `\`\`\`REPORT ${(new Date()).toISOString()}\n${rep.join('\n')}\`\`\`` : 'Nothing to report');
+        if (rep.length === 0) {
+            await discord('Nothing to report');
+        } else {
+            rep.unshift(`REPORT ${(new Date()).toISOString()}`);
+            let buff = []
+            const parts = [];
+            rep.forEach(r => {
+                if ([...buff, r].join('\n').length < 300) {
+                    buff.push(r);
+                } else {
+                    parts.push([...buff]);
+                    buff = [r];
+                }
+            })
+            parts.push(buff);
+
+            for (const p of parts) {
+                await discord(`\`\`\`${p.join('\n')}\`\`\``);
+            }
+        }
 
         this.nextReport = {};
     }

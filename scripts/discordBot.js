@@ -8,5 +8,5 @@ if (hookUrl) {
 }
 
 module.exports = (alert) => {
-    if (hook) hook.send(alert);
+    if (hook) return hook.send(alert);
 }
