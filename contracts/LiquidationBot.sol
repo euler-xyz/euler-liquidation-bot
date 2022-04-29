@@ -34,12 +34,6 @@ contract LiquidationBot {
         address collateral;
     }
 
-    uint someval;
-
-    function test() public {
-        someval = 1;    
-    }
-
     function liquidate(LiquidationParams memory liqParams) external onlyOwner {
         IEulerExec(liqParams.execAddr).deferLiquidityCheck(address(this), abi.encode(liqParams));
     }

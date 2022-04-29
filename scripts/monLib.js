@@ -1,7 +1,7 @@
 const WebSocket = require('ws');
 const {enablePatches, applyPatches} = require('immer');
 const ethers = require('ethers');
-const Euler = require('@eulerxyz/euler-sdk');
+const { Euler } = require('@eulerxyz/euler-sdk');
 
 const strategies = require('./strategies');
 const EulerToolClient = require('./EulerToolClient.js');
@@ -22,17 +22,11 @@ let reporter = { log: () => {} };
 let deferredAccounts = {};
 let bestStrategy;
 
-// TODO signers and owner
-// TODO EOA liquidation - checkLiquidation is async
-// TODO transfer all balance in bot
-// TODO process accounts in parallel
-// TODO improve gaslimit handling
-
 async function main() {
     const provider = new ethers.providers.JsonRpcProvider(botConfig.jsonRpcUrl)
     const wallet = new ethers.Wallet(process.env.PRV_KEY, provider)
 
-    config(new Euler(wallet, { mainnet: 1, ropsten: 3}[NETWORK])); // TODO extend with additional contracts (LiquidationBot)
+    config(new Euler(wallet, { mainnet: 1, ropsten: 3}[NETWORK]));
 
     reporter = new Reporter(botConfig.reporter);
 
@@ -175,7 +169,7 @@ async function doLiquidation(act) {
 
     let tx = await bestStrategy.exec();
 
-    let botEthBalance = await euler.getProvider().getBalance(euler.getSigner().address);
+    let botEthBalance = await euler.getSigner().getBalance();
 
     reporter.log({ type: reporter.LIQUIDATION, account: act, tx, strategy: bestStrategy.describe(), balanceLeft: botEthBalance });
     return true;

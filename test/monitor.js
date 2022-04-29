@@ -2,7 +2,7 @@ const et = require('euler-contracts/test/lib/eTestLib.js').config(`${__dirname}/
 const { provisionUniswapPool, deposit, } = require('./lib/helpers');
 const { runConnector } = require('./lib/botTestLib');
 const { config } = require('../scripts/monLib')
-const Euler = require('@eulerxyz/euler-sdk')
+const { Euler } = require('@eulerxyz/euler-sdk')
 
 et.testSet({
     desc: "eoa liquidation",
