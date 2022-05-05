@@ -1,5 +1,6 @@
 const fs = require('fs');
 const discord = require('./discordBot');
+const ethers = require('ethers')
 
 module.exports = class {
     YIELD_TOO_LOW = 1;

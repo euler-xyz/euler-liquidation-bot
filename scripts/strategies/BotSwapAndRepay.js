@@ -1,13 +1,9 @@
 const { cartesian, filterOutRejected } = require("../utils");
 const hre = require('hardhat')
 
-const WETH = {
-    'ropsten': '0xc778417E063141139Fce010982780140Aa0cD5Ab',
-    'mainnet': '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-}[hre.network.name];
 class BotSwapAndRepay {
-    constructor(act, collateral, underlying, eulerAddresses, liquidationBotContract) {
-        this.eulerAddresses = eulerAddresses;
+    constructor(act, collateral, underlying, ctx) {
+        this.ctx = ctx;
         this.bot = liquidationBotContract;
         this.act = act;
         this.collateral = collateral;

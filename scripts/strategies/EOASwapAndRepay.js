@@ -1,20 +1,14 @@
-let { cartesian, filterOutRejected } = require("../utils");
-const et = require('euler-contracts/test/lib/eTestLib.js');
+let ethers = require("ethers");
+let { cartesian, filterOutRejected, c1e18 } = require("../utils");
 
 class EOASwapAndRepay {
-    constructor(act, collateral, underlying, ctx) {
-        this.ctx = ctx;
+    constructor(act, collateral, underlying, euler) {
+        this.euler = euler;
         this.violator = act.account;
-        this.liquidator = ctx.wallet.address;
+        this.liquidator = euler.getSigner().address;
         this.collateralAddr = collateral.underlying.toLowerCase();
         this.underlyingAddr = underlying.underlying.toLowerCase();
-        this.refAsset = 
-            (
-                ctx.tokenSetup.riskManagerSettings &&
-                ctx.tokenSetup.riskManagerSettings.referenceAsset &&
-                ctx.tokenSetup.riskManagerSettings.referenceAsset.toLowerCase()
-            )
-            || ctx.contracts.tokens.WETH.address; // during tests
+        this.refAsset = euler.referenceAsset
         this.best = null;
         this.name = 'EOASwapAndRepay';
     }
@@ -23,11 +17,11 @@ class EOASwapAndRepay {
         let paths;
         let feeLevels = [500, 3000, 10000];
 
-        let eTokenAddress = await this.ctx.contracts.markets.underlyingToEToken(this.collateralAddr);
-        this.collateralEToken = await ethers.getContractAt('EToken', eTokenAddress);
-        this.collateralToken = await et.taskUtils.lookupToken(this.ctx, this.collateralAddr);
+        let eTokenAddress = await this.euler.contracts.markets.underlyingToEToken(this.collateralAddr);
+        this.collateralEToken = this.euler.eToken(eTokenAddress);
+        this.collateralToken = this.euler.erc20(this.collateralAddr);
 
-        let liqOpp = await this.ctx.contracts.liquidation.callStatic.checkLiquidation(
+        let liqOpp = await this.euler.contracts.liquidation.callStatic.checkLiquidation(
             this.liquidator,
             this.violator,
             this.underlyingAddr,
@@ -42,6 +36,7 @@ class EOASwapAndRepay {
             });
         } else {
             // TODO explosion! try auto router, sdk
+            // TODO don't do combination if collateral is the same as underlying - burn conversion item
             paths = cartesian(feeLevels, feeLevels).map(([feeIn, feeOut]) => {
                 return this.encodePath([this.underlyingAddr, this.refAsset, this.collateralAddr], [feeIn, feeOut]);
             });
@@ -80,13 +75,13 @@ class EOASwapAndRepay {
     async exec() {
         if (!this.best) throw 'No opportunity found yet!';
 
-        return et.taskUtils.runTx(
-            this.ctx.contracts.exec.batchDispatch(
-                this.ctx.buildBatch(this.buildLiqBatch(this.best.swapPath, this.best.repay)),
+        return await (
+            await this.euler.contracts.exec.batchDispatch(
+                this.euler.buildBatch(this.buildLiqBatch(this.best.swapPath, this.best.repay)),
                 [this.liquidator],
-                ({...await this.ctx.txOpts(), gasLimit: 1200000})
-            ),
-        );
+                ({...await this.euler.txOpts(), gasLimit: 1200000})
+            )
+        ).wait();
     }
 
     describe() {
@@ -177,9 +172,8 @@ class EOASwapAndRepay {
             },
         ];
 
-        let res = await this.ctx.contracts.exec.callStatic.batchDispatch(this.ctx.buildBatch(batchItems), [this.liquidator]);
-
-        let decoded = await this.ctx.decodeBatch(batchItems, res);
+        let res = await this.euler.contracts.exec.callStatic.batchDispatch(this.euler.buildBatch(batchItems), [this.liquidator]);
+        let decoded = await this.euler.decodeBatch(batchItems, res);
 
         let balanceBefore = decoded[0][0];
         let balanceAfter = decoded[decoded.length - 1][0];
@@ -192,7 +186,7 @@ class EOASwapAndRepay {
 
         let yieldEth = yieldCollateral
             .mul(ethers.BigNumber.from(10).pow(18 - collateralDecimals))
-            .mul(decoded[decoded.length - 2].currPrice).div(et.c1e18);
+            .mul(decoded[decoded.length - 2].currPrice).div(c1e18);
 
         return yieldEth;
     }

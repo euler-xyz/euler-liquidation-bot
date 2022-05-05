@@ -1,31 +1,33 @@
 const WebSocket = require('ws');
 const {enablePatches, applyPatches} = require('immer');
-const et = require('euler-contracts/test/lib/eTestLib.js');
+const ethers = require('ethers');
+const { Euler } = require('@eulerxyz/euler-sdk');
 
 const strategies = require('./strategies');
 const EulerToolClient = require('./EulerToolClient.js');
-const { cartesian } = require('./utils');
-const botConfig = require('../bot.config')[hre.network.name];
+const { cartesian, c1e18 } = require('./utils');
 const Reporter = require('./reporter');
+
+const NETWORK = process.env.NETWORK || 'mainnet';
+const botConfig = require('../bot.config')[NETWORK];
+
 
 enablePatches();
 
 let subsData = {};
 let showLogs;
-let ctx;
+let euler;
 let reporter = { log: () => {} };
 
 let deferredAccounts = {};
 let bestStrategy;
 
-// TODO signers and owner
-// TODO EOA liquidation - checkLiquidation is async
-// TODO transfer all balance in bot
-// TODO process accounts in parallel
-// TODO improve gaslimit handling
-
 async function main() {
-    config(await et.getTaskCtx()); // TODO extend with additional contracts (LiquidationBot)
+    const provider = new ethers.providers.JsonRpcProvider(botConfig.jsonRpcUrl)
+    const wallet = new ethers.Wallet(process.env.PRV_KEY, provider)
+
+    config(new Euler(wallet, { mainnet: 1, ropsten: 3}[NETWORK]));
+
     reporter = new Reporter(botConfig.reporter);
 
     let designatedAccount = process.env.LIQUIDATE_ACCOUNT
@@ -37,9 +39,9 @@ async function main() {
     doConnect();
 }
 
-async function config(context, logs = true) {
+async function config(eul, logs = true) {
     showLogs = logs;
-    ctx = context;
+    euler = eul;
 }
 
 function setData(newData) {
@@ -123,7 +125,7 @@ async function liquidateDesignatedAccount(violator) {
     let account = await getAccountLiquidity(violator);
 
     console.log(`Account ${violator} health = ${ethers.utils.formatEther(account.healthScore)}`);
-    if (account.healthScore.gte(et.c1e18)) {
+    if (account.healthScore.gte(c1e18)) {
         console.log(`  Account not in violation.`);
         return;
     }
@@ -141,7 +143,7 @@ async function doLiquidation(act) {
     const opportunities = await Promise.all(
         cartesian(collaterals, underlyings, activeStrategies).map(
             async ([collateral, underlying, Strategy]) => {
-                const strategy = new Strategy(act, collateral, underlying, ctx);
+                const strategy = new Strategy(act, collateral, underlying, euler);
                 await strategy.findBest();
                 return strategy;
             }
@@ -167,15 +169,14 @@ async function doLiquidation(act) {
 
     let tx = await bestStrategy.exec();
 
-    let wallet = (await ethers.getSigners())[0];
-    let botEthBalance = await ethers.provider.getBalance(wallet.address);
+    let botEthBalance = await euler.getSigner().getBalance();
 
     reporter.log({ type: reporter.LIQUIDATION, account: act, tx, strategy: bestStrategy.describe(), balanceLeft: botEthBalance });
     return true;
 }
 
 async function getAccountLiquidity(account) {
-    let detLiq = await ctx.contracts.exec.callStatic.detailedLiquidity(account);
+    let detLiq = await euler.contracts.exec.callStatic.detailedLiquidity(account);
 
     let markets = [];
 
@@ -195,7 +196,7 @@ async function getAccountLiquidity(account) {
         });
     };
 
-    let healthScore = totalAssets.mul(et.c1e18).div(totalLiabilities);
+    let healthScore = totalAssets.mul(c1e18).div(totalLiabilities);
     
     return {
         account,

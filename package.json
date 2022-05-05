@@ -1,5 +1,13 @@
 {
+  "name": "euler-liquidation-bot",
+  "version": "1.0.0",
+  "description": "Bot performing liquidations on the Euler platform",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
   "dependencies": {
+    "@eulerxyz/euler-sdk": "^0.1.0",
     "@nomiclabs/hardhat-ethers": "^2.0.2",
     "@nomiclabs/hardhat-waffle": "^2.0.1",
     "@uniswap/v3-periphery": "^1.1.1",
@@ -16,5 +24,20 @@
     "hardhat": "^2.7.0",
     "hardhat-dependency-compiler": "^1.1.2",
     "solidity-coverage": "^0.7.20"
-  }
+  },
+  "scripts": {
+    "start": "node scripts/mon.js",
+    "start:ropsten": "NETWORK=ropsten node scripts/mon.js",
+    "test": "npx hardhat test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/euler-xyz/euler-liquidation-bot.git"
+  },
+  "author": "Euler",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/euler-xyz/euler-liquidation-bot/issues"
+  },
+  "homepage": "https://github.com/euler-xyz/euler-liquidation-bot#readme"
 }

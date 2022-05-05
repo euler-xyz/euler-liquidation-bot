@@ -2,6 +2,7 @@ const et = require('euler-contracts/test/lib/eTestLib.js').config(`${__dirname}/
 const { provisionUniswapPool, deposit, } = require('./lib/helpers');
 const { runConnector } = require('./lib/botTestLib');
 const { config } = require('../scripts/monLib')
+const { Euler } = require('@eulerxyz/euler-sdk')
 
 et.testSet({
     desc: "eoa liquidation",
@@ -38,8 +39,14 @@ et.testSet({
         // wait for twap
         { action: 'checkpointTime', },
         { action: 'jumpTimeAndMine', time: 3600 * 30 },
-
-        () => config(ctx, false)
+        () => config(
+            new Euler(
+                ctx.wallet,
+                network.config.chainId,
+                {addresses: ctx.addressManifest, referenceAsset: ctx.contracts.tokens.WETH.address}
+            ),
+            false,
+        ),
     ],
 })
 
