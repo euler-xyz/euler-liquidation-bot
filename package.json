@@ -1,6 +1,6 @@
 {
   "name": "euler-liquidation-bot",
-  "version": "1.0.0",
+  "version": "0.1.1",
   "description": "Bot performing liquidations on the Euler platform",
   "main": "index.js",
   "directories": {
