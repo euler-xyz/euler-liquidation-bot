@@ -1,5 +1,5 @@
 let ethers = require("ethers");
-let { cartesian, filterOutRejected, c1e18 } = require("../utils");
+let { cartesian, filterOutRejected, c1e18, txOpts } = require("../utils");
 
 class EOASwapAndRepay {
     constructor(act, collateral, underlying, euler) {
@@ -79,7 +79,7 @@ class EOASwapAndRepay {
             await this.euler.contracts.exec.batchDispatch(
                 this.euler.buildBatch(this.buildLiqBatch(this.best.swapPath, this.best.repay)),
                 [this.liquidator],
-                ({...await this.euler.txOpts(), gasLimit: 1200000})
+                ({...await txOpts(this.euler.getProvider()), gasLimit: 1200000})
             )
         ).wait();
     }
