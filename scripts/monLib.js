@@ -28,6 +28,14 @@ async function main() {
 
     config(new Euler(wallet, { mainnet: 1, ropsten: 3}[NETWORK]));
 
+    // TODO remove after mainnet upgrade
+    const patchedExecAbi = [
+        ...euler.abis['exec'],
+        'function batchDispatchSimulate(tuple(bool allowError, address proxyAddr, bytes data)[] items, address[] deferLiquidityChecks)',
+        'error BatchDispatchSimulation(tuple(bool success, bytes result)[] simulation)',
+      ]
+    euler.addContract("Exec", patchedExecAbi, euler.contracts.exec.address)
+
     reporter = new Reporter(botConfig.reporter);
 
     let designatedAccount = process.env.LIQUIDATE_ACCOUNT
@@ -150,7 +158,6 @@ async function doLiquidation(act) {
         )
     );
 
-    // console.log('opportunities: ', opportunities);
     bestStrategy = opportunities.reduce((accu, o) => {
         return o.best && o.best.yield.gt(accu.best.yield) ? o : accu;
     }, { best: { yield: 0 }});
@@ -166,9 +173,7 @@ async function doLiquidation(act) {
         reporter.log({ type: reporter.YIELD_TOO_LOW, account: act, yield: bestStrategy.best.yield, required: botConfig.minYield });
         return false;
     }
-
     let tx = await bestStrategy.exec();
-
     let botEthBalance = await euler.getSigner().getBalance();
 
     reporter.log({ type: reporter.LIQUIDATION, account: act, tx, strategy: bestStrategy.describe(), balanceLeft: botEthBalance });
@@ -197,7 +202,7 @@ async function getAccountLiquidity(account) {
     };
 
     let healthScore = totalAssets.mul(c1e18).div(totalLiabilities);
-    
+
     return {
         account,
         healthScore,
