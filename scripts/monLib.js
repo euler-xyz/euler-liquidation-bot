@@ -134,6 +134,12 @@ async function liquidateDesignatedAccount(violator) {
 }
 
 async function doLiquidation(act) {
+    const { totalLiabilities, totalCollateral } = await getAccountLiquidity(act.account)
+    act = {
+        ...act,
+        totalLiabilities,
+        totalCollateral,
+    }
     const activeStrategies = [strategies.EOASwapAndRepay]; // TODO config
     const collaterals = act.markets.filter(m => m.liquidityStatus.collateralValue !== '0');
     const underlyings = act.markets.filter(m => m.liquidityStatus.liabilityValue !== '0');
@@ -199,6 +205,8 @@ async function getAccountLiquidity(account) {
     let healthScore = totalAssets.mul(c1e18).div(totalLiabilities);
     
     return {
+        totalLiabilities,
+        totalCollateral: totalAssets,
         account,
         healthScore,
         markets,

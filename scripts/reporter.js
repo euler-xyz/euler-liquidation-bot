@@ -19,25 +19,35 @@ module.exports = class {
 
     async report() {
         const countEvent = (events, type) => events.filter(e => e.type === type).length;
+        let skipped = 0
         let rep = Object.entries(this.nextReport).map(([account, events]) => {
-            const yieldTooLowCount = countEvent(events, this.YIELD_TOO_LOW)
-            let latestYield = ''
+            // console.log('events: ', events);
+            const yieldTooLowCount = countEvent(events, this.YIELD_TOO_LOW);
+            const totalCollateral = parseFloat(ethers.utils.formatEther(events[events.length - 1].account.totalCollateral)).toFixed(3);
+            if (Number(totalCollateral) < 0.5) {
+                skipped++;
+                return null;
+            }
+            const totalLiabilities = parseFloat(ethers.utils.formatEther(events[events.length - 1].account.totalLiabilities)).toFixed(3);
+            let latestYield = '';
             if (yieldTooLowCount) {
-                latestYield = events.filter(e => e.type === this.YIELD_TOO_LOW).pop().yield
+                latestYield = events.filter(e => e.type === this.YIELD_TOO_LOW).pop().yield;
             }
             let msg = '';
-            msg = `${account} HS: ${events[events.length - 1].account.healthScore / 1000000} `;
-            msg += `Yield too low: ${yieldTooLowCount}${yieldTooLowCount && ` (${ethers.utils.formatEther(latestYield)}) ` }`;
-            msg += `No opportunity found: ${countEvent(events, this.NO_OPPORTUNITY_FOUND)} `;
-            msg += `Liquidation: ${countEvent(events, this.LIQUIDATION)} `;
-            msg += `Error: ${countEvent(events, this.ERROR)} `;
+            msg = `${account} HS: ${events[events.length - 1].account.healthScore / 1000000} \n`;
+            msg += `Total collateral ETH: ${totalCollateral}, Total liabilities ETH: ${totalLiabilities} \n`
+            msg += `Yield: ${yieldTooLowCount}${yieldTooLowCount && ` (${parseFloat(ethers.utils.formatEther(latestYield)).toFixed(6)}) ` }`;
+            msg += `No op: ${countEvent(events, this.NO_OPPORTUNITY_FOUND)} `;
+            // msg += `Liquidation: ${countEvent(events, this.LIQUIDATION)} `;
+            msg += `Error: ${countEvent(events, this.ERROR)} \n`;
             return msg;
-        })
+        }).filter(Boolean)
 
-        if (rep.length === 0) {
+        if (rep.length === 0 && skipped === 0) {
             await discord('Nothing to report');
         } else {
             rep.unshift(`REPORT ${(new Date()).toISOString()}`);
+            rep.push(`Skipped small accounts: ${skipped}`)
             let buff = []
             const parts = [];
             rep.forEach(r => {
@@ -52,6 +62,7 @@ module.exports = class {
 
             for (const p of parts) {
                 await discord(`\`\`\`${p.join('\n')}\`\`\``);
+                // console.log(`\`\`\`${p.join('\n')}\`\`\``);
             }
         }
 
