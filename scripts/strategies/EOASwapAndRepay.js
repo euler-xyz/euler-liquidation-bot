@@ -172,21 +172,19 @@ class EOASwapAndRepay {
             },
         ];
 
-        let res = await this.euler.contracts.exec.callStatic.batchDispatch(this.euler.buildBatch(batchItems), [this.liquidator]);
-        let decoded = await this.euler.decodeBatch(batchItems, res);
+        const { simulation } = await this.euler.simulateBatch([this.liquidator], batchItems)
 
-        let balanceBefore = decoded[0][0];
-        let balanceAfter = decoded[decoded.length - 1][0];
+        let balanceBefore = simulation[0][0];
+        let balanceAfter = simulation[simulation.length - 1][0];
 
         if (balanceAfter.lte(balanceBefore)) throw `No yield ${repay} ${swapPath}`;
-
         let yieldCollateral = balanceAfter.sub(balanceBefore);
 
         let collateralDecimals = await this.collateralToken.decimals();
 
         let yieldEth = yieldCollateral
             .mul(ethers.BigNumber.from(10).pow(18 - collateralDecimals))
-            .mul(decoded[decoded.length - 2].currPrice).div(c1e18);
+            .mul(simulation[simulation.length - 2].currPrice).div(c1e18);
 
         return yieldEth;
     }
