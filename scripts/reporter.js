@@ -21,6 +21,11 @@ module.exports = class {
         const countEvent = (events, type) => events.filter(e => e.type === type).length;
         let skipped = 0
         let rep = Object.entries(this.nextReport).map(([account, events]) => {
+
+            // account in violation after FTX BF decrease
+            if (account.toLowerCase() === '0xfe32a37f15ee4a4b59715530e5817d1322b9df80') {
+                return null
+            }
             // console.log('events: ', events);
             const yieldTooLowCount = countEvent(events, this.YIELD_TOO_LOW);
             const totalCollateral = parseFloat(ethers.utils.formatEther(events[events.length - 1].account.totalCollateral)).toFixed(3);
