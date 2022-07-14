@@ -32,7 +32,17 @@ class EOASwapAndRepay {
                 this.isProtectedCollateral = true;
                 this.unwrappedCollateralAddr = protectedUnderlying;
                 const unwrappedEToken = await this.euler.contracts.markets.underlyingToEToken(protectedUnderlying)
-                this.unwrappedCollateralEToken = this.euler.eToken(unwrappedEToken)
+                this.unwrappedCollateralEToken = this.euler.eToken(unwrappedEToken);
+
+                const allowance = await this.euler.erc20(this.unwrappedCollateralAddr).allowance(this.liquidator, this.euler.addresses.euler);
+                if (allowance.eq(0)) {
+                    // console.log('Approving: ', this.unwrappedCollateralAddr);
+                    await (await this.euler.erc20(this.unwrappedCollateralAddr).approve(
+                        this.euler.addresses.euler,
+                        MAX_UINT,
+                        ({...await txOpts(this.euler.getProvider()), gasLimit: 300000})
+                    )).wait();
+                }
             }
         }
 
@@ -63,17 +73,20 @@ class EOASwapAndRepay {
         }
 
         let repayFraction = 98;
-        while (!this.best && repayFraction > 0) {
+        while (!this.best && repayFraction === 98) {
             let repay = liqOpp.repay.mul(repayFraction).div(100);
-
+            let unwrapAmount
+            if (this.isProtectedCollateral) {
+                unwrapAmount = await this.getYieldByRepay(repay);
+            }
             let tests = await Promise.allSettled(
                 paths.map(async (swapPath) => {
-                    let { yieldEth, unwrapAmmount } = await this.testLiquidation(swapPath, repay)
+                    let yieldEth = await this.testLiquidation(swapPath, repay, unwrapAmount)
                     return {
                         swapPath,
                         repay,
                         yield: yieldEth,
-                        unwrapAmmount,
+                        unwrapAmount,
                     };
                 })
             );
@@ -99,7 +112,7 @@ class EOASwapAndRepay {
 
         return await (
             await this.euler.contracts.exec.batchDispatch(
-                this.euler.buildBatch(this.buildLiqBatch(this.best.swapPath, this.best.repay, this.best.unwrapAmmount)),
+                this.euler.buildBatch(this.buildLiqBatch(this.best.swapPath, this.best.repay, this.best.unwrapAmount)),
                 [this.liquidator],
                 ({...await txOpts(this.euler.getProvider()), gasLimit: 1200000})
             )
@@ -115,7 +128,7 @@ class EOASwapAndRepay {
 
     // PRIVATE
 
-    buildLiqBatch(swapPath, repay, unwrapAmmount) {
+    buildLiqBatch(swapPath, repay, unwrapAmount) {
         let conversionItems = [];
 
         if (this.underlyingAddr === this.collateralAddr) {
@@ -142,7 +155,7 @@ class EOASwapAndRepay {
                         method: 'pTokenUnWrap',
                         args: [
                             this.unwrappedCollateralAddr,
-                            unwrapAmmount
+                            unwrapAmount
                         ]
                     },
                     {
@@ -153,13 +166,6 @@ class EOASwapAndRepay {
                 )
             }
             conversionItems.push(
-                {
-                    contract: this.collateralEToken,
-                    method: 'balanceOfUnderlying',
-                    args: [
-                        this.liquidator,
-                    ]
-                },
                 {
                     contract: 'swap',
                     method: 'swapAndRepayUni',
@@ -174,7 +180,7 @@ class EOASwapAndRepay {
                         },
                         0,
                     ],
-                }
+                },
             );
         }
 
@@ -202,13 +208,7 @@ class EOASwapAndRepay {
         ];
     }
 
-    async testLiquidation(swapPath, repay) {
-        let unwrapAmmount
-        if (this.isProtectedCollateral) {
-            unwrapAmmount = await this.getYieldByRepay(repay);
-            await (await this.euler.erc20(this.unwrappedCollateralAddr).approve(this.euler.addresses.euler, MAX_UINT)).wait();
-        }
-
+    async testLiquidation(swapPath, repay, unwrapAmount) {
         const targetCollateralEToken = this.isProtectedCollateral ? this.unwrappedCollateralEToken : this.collateralEToken;
 
         let batchItems = [
@@ -219,7 +219,7 @@ class EOASwapAndRepay {
                     this.liquidator,
                 ]
             },
-            ...this.buildLiqBatch(swapPath, repay, unwrapAmmount),
+            ...this.buildLiqBatch(swapPath, repay, unwrapAmount),
             {
                 contract: 'exec',
                 method: 'getPriceFull',
@@ -235,11 +235,12 @@ class EOASwapAndRepay {
                 ],
             },
         ];
+        let simulation, error;
+        ({ simulation, error } = await this.euler.simulateBatch([this.liquidator], batchItems));
+        if (error) throw error.value;
 
-        const { simulation } = await this.euler.simulateBatch([this.liquidator], batchItems)
-
-        let balanceBefore = simulation[0][0];
-        let balanceAfter = simulation[simulation.length - 1][0];
+        let balanceBefore = simulation[0].response[0];
+        let balanceAfter = simulation[simulation.length - 1].response[0];
 
         if (balanceAfter.lte(balanceBefore)) throw `No yield ${repay} ${swapPath}`;
         let yieldCollateral = balanceAfter.sub(balanceBefore);
@@ -248,12 +249,9 @@ class EOASwapAndRepay {
 
         let yieldEth = yieldCollateral
             .mul(ethers.BigNumber.from(10).pow(18 - collateralDecimals))
-            .mul(simulation[simulation.length - 2].currPrice).div(c1e18);
+            .mul(simulation[simulation.length - 2].response.currPrice).div(c1e18);
 
-        return {
-            yieldEth,
-            unwrapAmmount,
-        };
+        return yieldEth;
     }
 
     encodePath(path, fees) {
@@ -305,12 +303,10 @@ class EOASwapAndRepay {
             },
         ];
 
-        let res = await this.euler.contracts.exec.callStatic.batchDispatch(this.euler.buildBatch(batch), [this.liquidator]);
+        let { simulation } = await this.euler.simulateBatch([this.liquidator], batch);
 
-        let decoded = await this.euler.decodeBatch(batch, res);
-
-        let balanceBefore = decoded[0][0];
-        let balanceAfter = decoded[decoded.length - 1][0];
+        let balanceBefore = simulation[0].response[0];
+        let balanceAfter = simulation[simulation.length - 1].response[0];
 
         return balanceAfter.sub(balanceBefore);
     }

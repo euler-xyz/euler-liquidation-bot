@@ -63,6 +63,7 @@ module.exports = {
             'euler-contracts/contracts/test/JunkMarketsUpgrade.sol',
             'euler-contracts/contracts/test/MockUniswapV3Factory.sol',
             'euler-contracts/contracts/test/MockUniswapV3Pool.sol',
+            'euler-contracts/contracts/test/MockEACAggregatorProxy.sol',
             'euler-contracts/contracts/test/SimpleUniswapPeriphery.sol',
             'euler-contracts/contracts/test/TestERC20.sol',
             'euler-contracts/contracts/test/TestModule.sol',
