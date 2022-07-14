@@ -1,6 +1,8 @@
 let ethers = require("ethers");
 let { cartesian, filterOutRejected, c1e18, txOpts } = require("../utils");
 
+const MAX_UINT = ethers.constants.MaxUint256;
+
 class EOASwapAndRepay {
     constructor(act, collateral, underlying, euler) {
         this.euler = euler;
@@ -11,11 +13,28 @@ class EOASwapAndRepay {
         this.refAsset = euler.referenceAsset
         this.best = null;
         this.name = 'EOASwapAndRepay';
+        this.isProtectedCollateral = false;
     }
 
     async findBest() {
         let paths;
-        let feeLevels = [500, 3000, 10000];
+        let feeLevels = [100, 500, 3000, 10000];
+
+
+        let protectedUnderlying
+        try {
+            protectedUnderlying = await this.euler.pToken(this.collateralAddr).underlying();
+        } catch {}
+
+        if (protectedUnderlying) {
+            const u2p  = await this.euler.contracts.markets.underlyingToPToken(protectedUnderlying)
+            if (this.collateralAddr.toLowerCase() === u2p.toLowerCase()) {
+                this.isProtectedCollateral = true;
+                this.unwrappedCollateralAddr = protectedUnderlying;
+                const unwrappedEToken = await this.euler.contracts.markets.underlyingToEToken(protectedUnderlying)
+                this.unwrappedCollateralEToken = this.euler.eToken(unwrappedEToken)
+            }
+        }
 
         let eTokenAddress = await this.euler.contracts.markets.underlyingToEToken(this.collateralAddr);
         this.collateralEToken = this.euler.eToken(eTokenAddress);
@@ -37,8 +56,9 @@ class EOASwapAndRepay {
         } else {
             // TODO explosion! try auto router, sdk
             // TODO don't do combination if collateral is the same as underlying - burn conversion item
+            const collateral = this.isProtectedCollateral ? this.unwrappedCollateralAddr : this.collateralAddr;
             paths = cartesian(feeLevels, feeLevels).map(([feeIn, feeOut]) => {
-                return this.encodePath([this.underlyingAddr, this.refAsset, this.collateralAddr], [feeIn, feeOut]);
+                return this.encodePath([this.underlyingAddr, this.refAsset, collateral], [feeIn, feeOut]);
             });
         }
 
@@ -48,10 +68,12 @@ class EOASwapAndRepay {
 
             let tests = await Promise.allSettled(
                 paths.map(async (swapPath) => {
+                    let { yieldEth, unwrapAmmount } = await this.testLiquidation(swapPath, repay)
                     return {
                         swapPath,
                         repay,
-                        yield: await this.testLiquidation(swapPath, repay)
+                        yield: yieldEth,
+                        unwrapAmmount,
                     };
                 })
             );
@@ -77,7 +99,7 @@ class EOASwapAndRepay {
 
         return await (
             await this.euler.contracts.exec.batchDispatch(
-                this.euler.buildBatch(this.buildLiqBatch(this.best.swapPath, this.best.repay)),
+                this.euler.buildBatch(this.buildLiqBatch(this.best.swapPath, this.best.repay, this.best.unwrapAmmount)),
                 [this.liquidator],
                 ({...await txOpts(this.euler.getProvider()), gasLimit: 1200000})
             )
@@ -93,35 +115,69 @@ class EOASwapAndRepay {
 
     // PRIVATE
 
-    buildLiqBatch(swapPath, repay) {
-        let conversionItem;
+    buildLiqBatch(swapPath, repay, unwrapAmmount) {
+        let conversionItems = [];
 
         if (this.underlyingAddr === this.collateralAddr) {
-            conversionItem = {
-                contract: this.collateralEToken,
-                method: 'burn',
-                args: [
-                    0,
-                    ethers.constants.MaxUint256,
-                ],
-            };
+            conversionItems.push(
+                {
+                    contract: this.collateralEToken,
+                    method: 'burn',
+                    args: [
+                        0,
+                        MAX_UINT,
+                    ],
+                }
+            );
         } else {
-            conversionItem = {
-                contract: 'swap',
-                method: 'swapAndRepayUni',
-                args: [
+            if (this.isProtectedCollateral) {
+                conversionItems.push(
                     {
-                        subAccountIdIn: 0,
-                        subAccountIdOut: 0,
-                        amountOut: 0,
-                        amountInMaximum: ethers.constants.MaxUint256,
-                        deadline: 0, // FIXME!
-                        path: swapPath,
+                        contract: this.collateralEToken,
+                        method: 'withdraw',
+                        args: [0, MAX_UINT],
                     },
-                    0,
-                ],
-            };
+                    {
+                        contract: 'exec',
+                        method: 'pTokenUnWrap',
+                        args: [
+                            this.unwrappedCollateralAddr,
+                            unwrapAmmount
+                        ]
+                    },
+                    {
+                        contract: this.unwrappedCollateralEToken,
+                        method: 'deposit',
+                        args: [0, MAX_UINT]
+                    },
+                )
+            }
+            conversionItems.push(
+                {
+                    contract: this.collateralEToken,
+                    method: 'balanceOfUnderlying',
+                    args: [
+                        this.liquidator,
+                    ]
+                },
+                {
+                    contract: 'swap',
+                    method: 'swapAndRepayUni',
+                    args: [
+                        {
+                            subAccountIdIn: 0,
+                            subAccountIdOut: 0,
+                            amountOut: 0,
+                            amountInMaximum: MAX_UINT,
+                            deadline: 0, // FIXME!
+                            path: swapPath,
+                        },
+                        0,
+                    ],
+                }
+            );
         }
+
         return [
             {
                 contract: 'liquidation',
@@ -134,7 +190,7 @@ class EOASwapAndRepay {
                     0,
                 ],
             },
-            conversionItem,
+            ...conversionItems,
             {
                 contract: 'markets',
                 method: 'exitMarket',
@@ -147,15 +203,23 @@ class EOASwapAndRepay {
     }
 
     async testLiquidation(swapPath, repay) {
+        let unwrapAmmount
+        if (this.isProtectedCollateral) {
+            unwrapAmmount = await this.getYieldByRepay(repay);
+            await (await this.euler.erc20(this.unwrappedCollateralAddr).approve(this.euler.addresses.euler, MAX_UINT)).wait();
+        }
+
+        const targetCollateralEToken = this.isProtectedCollateral ? this.unwrappedCollateralEToken : this.collateralEToken;
+
         let batchItems = [
             {
-                contract: this.collateralEToken,
+                contract: targetCollateralEToken,
                 method: 'balanceOfUnderlying',
                 args: [
                     this.liquidator,
                 ]
             },
-            ...this.buildLiqBatch(swapPath, repay),
+            ...this.buildLiqBatch(swapPath, repay, unwrapAmmount),
             {
                 contract: 'exec',
                 method: 'getPriceFull',
@@ -164,7 +228,7 @@ class EOASwapAndRepay {
                 ],
             },
             {
-                contract: this.collateralEToken,
+                contract: targetCollateralEToken,
                 method: 'balanceOfUnderlying',
                 args: [
                     this.liquidator,
@@ -186,7 +250,10 @@ class EOASwapAndRepay {
             .mul(ethers.BigNumber.from(10).pow(18 - collateralDecimals))
             .mul(simulation[simulation.length - 2].currPrice).div(c1e18);
 
-        return yieldEth;
+        return {
+            yieldEth,
+            unwrapAmmount,
+        };
     }
 
     encodePath(path, fees) {
@@ -207,6 +274,45 @@ class EOASwapAndRepay {
         encoded += path[path.length - 1].slice(2);
     
         return encoded.toLowerCase();
+    }
+
+    async getYieldByRepay(repay) {
+        const batch = [
+            {
+                contract: this.collateralEToken,
+                method: 'balanceOfUnderlying',
+                args: [
+                    this.liquidator,
+                ]
+            },
+            {
+                contract: 'liquidation',
+                method: 'liquidate',
+                args: [
+                    this.violator,
+                    this.underlyingAddr,
+                    this.collateralAddr,
+                    repay,
+                    0,
+                ],
+            },
+            {
+                contract: this.collateralEToken,
+                method: 'balanceOfUnderlying',
+                args: [
+                    this.liquidator,
+                ]
+            },
+        ];
+
+        let res = await this.euler.contracts.exec.callStatic.batchDispatch(this.euler.buildBatch(batch), [this.liquidator]);
+
+        let decoded = await this.euler.decodeBatch(batch, res);
+
+        let balanceBefore = decoded[0][0];
+        let balanceAfter = decoded[decoded.length - 1][0];
+
+        return balanceAfter.sub(balanceBefore);
     }
 }
 

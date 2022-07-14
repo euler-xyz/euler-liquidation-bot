@@ -22,8 +22,6 @@ et.testSet({
         ...deposit(ctx, 'TST'),
         ...deposit(ctx, 'WETH'),
 
-        // wallet2 is borrower/violator
-        ...deposit(ctx, 'TST2', ctx.wallet2),
         { from: ctx.wallet2, send: 'markets.enterMarket', args: [0, ctx.contracts.tokens.TST2.address], },
 
         // wallet 5 is the super whale
@@ -35,6 +33,17 @@ et.testSet({
         { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST', dir: 'buy', amount: et.eth(10_000), priceLimit: 2.2, },
         { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST2', dir: 'sell', amount: et.eth(10_000), priceLimit: 0.4 },
         { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST3', dir: 'buy', amount: et.eth(10_000), priceLimit: 1.7 },
+
+        // activate pTST2
+        { send: 'markets.activatePToken', args: [ctx.contracts.tokens.TST2.address], },
+        { action: 'cb', cb: async () => {
+            ctx.contracts.pTokens = {};
+            let pTokenAddr = await ctx.contracts.markets.underlyingToPToken(ctx.contracts.tokens.TST2.address);
+            ctx.contracts.pTokens['pTST2'] = await ethers.getContractAt('PToken', pTokenAddr);
+
+            let epTokenAddr = await ctx.contracts.markets.underlyingToEToken(ctx.contracts.pTokens.pTST2.address);
+            ctx.contracts.eTokens['epTST2'] = await ethers.getContractAt('EToken', epTokenAddr);
+        }},
 
         // wait for twap
         { action: 'checkpointTime', },
@@ -54,6 +63,9 @@ et.testSet({
 .test({
     desc: "basic full liquidation",
     actions: ctx => [
+        // wallet2 is borrower/violator
+        ...deposit(ctx, 'TST2', ctx.wallet2),
+
         { from: ctx.wallet2, send: 'dTokens.dTST.borrow', args: [0, et.eth(5)], },
 
         { callStatic: 'exec.liquidity', args: [ctx.wallet2.address], onResult: r => {
@@ -81,7 +93,52 @@ et.testSet({
 
         { callStatic: 'liquidation.checkLiquidation', args: [ctx.wallet.address, ctx.wallet2.address, ctx.contracts.tokens.TST.address, ctx.contracts.tokens.TST2.address],
             onResult: r => {
-                et.assert(r.healthScore.gte(1))
+                et.equals(r.healthScore, 1.25, 0.01);
+            },
+        },
+    ]
+})
+
+
+.test({
+    desc: "liquidate protected collateral",
+    actions: ctx => [
+        // wallet2 is borrower/violator
+        { from: ctx.wallet2, send: 'tokens.TST2.mint', args: [ctx.wallet2.address, et.eth(100)], },
+        { from: ctx.wallet2, send: 'tokens.TST2.approve', args: [ctx.contracts.pTokens.pTST2.address, et.MaxUint256,], },
+        { from: ctx.wallet2, send: 'pTokens.pTST2.wrap', args: [et.eth(100)], },
+        { from: ctx.wallet2, send: 'eTokens.epTST2.deposit', args: [0, et.eth(100)], },
+
+        { from: ctx.wallet2, send: 'markets.enterMarket', args: [0, ctx.contracts.pTokens.pTST2.address], },
+
+        { from: ctx.wallet2, send: 'dTokens.dTST.borrow', args: [0, et.eth(5)], },
+
+        { callStatic: 'exec.liquidity', args: [ctx.wallet2.address], onResult: r => {
+            et.equals(r.collateralValue / r.liabilityValue, 1.09, 0.01);
+        }, },
+
+        { from: ctx.wallet5, action: 'doUniswapSwap', tok: 'TST', dir: 'buy', amount: et.eth(10_000), priceLimit: 2.5 },
+
+        { action: 'checkpointTime', },
+        { action: 'jumpTimeAndMine', time: 3600 * 30 * 100 },
+
+        { callStatic: 'exec.liquidity', args: [ctx.wallet2.address], onResult: r => {
+            et.equals(r.collateralValue / r.liabilityValue, 0.96, 0.001);
+        }, },
+
+        { callStatic: 'liquidation.checkLiquidation', args: [ctx.wallet.address, ctx.wallet2.address, ctx.contracts.tokens.TST.address, ctx.contracts.pTokens.pTST2.address],
+            onResult: r => {
+                et.equals(r.healthScore, 0.96, 0.001);
+                ctx.stash.repay = r.repay;
+                ctx.stash.yield = r.yield;
+            },
+        },
+
+        () => runConnector(ctx),
+
+        { callStatic: 'liquidation.checkLiquidation', args: [ctx.wallet.address, ctx.wallet2.address, ctx.contracts.tokens.TST.address, ctx.contracts.pTokens.pTST2.address],
+            onResult: r => {
+                et.equals(r.healthScore, 1.25, 0.01);
             },
         },
     ]
