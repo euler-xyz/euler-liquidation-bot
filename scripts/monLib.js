@@ -28,14 +28,6 @@ async function main() {
 
     config(new Euler(wallet, { mainnet: 1, ropsten: 3}[NETWORK]));
 
-    // TODO remove after mainnet upgrade
-    const patchedExecAbi = [
-        ...euler.abis['exec'],
-        'function batchDispatchSimulate(tuple(bool allowError, address proxyAddr, bytes data)[] items, address[] deferLiquidityChecks)',
-        'error BatchDispatchSimulation(tuple(bool success, bytes result)[] simulation)',
-      ]
-    euler.addContract("Exec", patchedExecAbi, euler.contracts.exec.address)
-
     reporter = new Reporter(botConfig.reporter);
 
     let designatedAccount = process.env.LIQUIDATE_ACCOUNT
