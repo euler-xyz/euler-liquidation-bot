@@ -31,7 +31,7 @@ class EOASwapAndRepay {
             if (this.collateralAddr.toLowerCase() === u2p.toLowerCase()) {
                 this.isProtectedCollateral = true;
                 this.unwrappedCollateralAddr = protectedUnderlying;
-                const unwrappedEToken = await this.euler.contracts.markets.underlyingToEToken(protectedUnderlying)
+                const unwrappedEToken = await this.euler.contracts.markets.underlyingToEToken(protectedUnderlying);
                 this.unwrappedCollateralEToken = this.euler.eToken(unwrappedEToken);
 
                 const allowance = await this.euler.erc20(this.unwrappedCollateralAddr).allowance(this.liquidator, this.euler.addresses.euler);
