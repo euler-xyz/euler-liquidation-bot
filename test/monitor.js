@@ -2,7 +2,8 @@ const et = require('euler-contracts/test/lib/eTestLib.js').config(`${__dirname}/
 const { provisionUniswapPool, deposit, } = require('./lib/helpers');
 const { runConnector } = require('./lib/botTestLib');
 const { config } = require('../scripts/monLib')
-const { Euler } = require('@eulerxyz/euler-sdk')
+const { Euler } = require('@eulerxyz/euler-sdk');
+const { ethers } = require('hardhat');
 
 et.testSet({
     desc: "eoa liquidation",
@@ -52,7 +53,15 @@ et.testSet({
             new Euler(
                 ctx.wallet,
                 network.config.chainId,
-                {addresses: ctx.addressManifest, referenceAsset: ctx.contracts.tokens.WETH.address}
+                {
+                    eulTokenConfig: {address: ethers.constants.AddressZero},
+                    addresses: {
+                        ...ctx.addressManifest,
+                        eulStakes: ethers.constants.AddressZero,
+                        eulDistributor: ethers.constants.AddressZero,
+                    },
+                    referenceAsset: ctx.contracts.tokens.WETH.address
+                }
             ),
             false,
         ),

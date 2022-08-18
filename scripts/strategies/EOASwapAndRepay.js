@@ -73,7 +73,7 @@ class EOASwapAndRepay {
         }
 
         let repayFraction = 98;
-        while (!this.best && repayFraction > 0) {
+        while (!this.best && repayFraction === 98) {
             let repay = liqOpp.repay.mul(repayFraction).div(100);
             let unwrapAmount
             if (this.isProtectedCollateral) {
@@ -180,7 +180,7 @@ class EOASwapAndRepay {
                         },
                         0,
                     ],
-                }
+                },
             );
         }
 
@@ -235,24 +235,21 @@ class EOASwapAndRepay {
                 ],
             },
         ];
+        let simulation, error;
+        ({ simulation, error } = await this.euler.simulateBatch([this.liquidator], batchItems));
+        if (error) throw error.value;
 
-
-        let res = await this.euler.contracts.exec.callStatic.batchDispatch(this.euler.buildBatch(batchItems), [this.liquidator]);
-
-        let decoded = await this.euler.decodeBatch(batchItems, res);
-
-        let balanceBefore = decoded[0][0];
-        let balanceAfter = decoded[decoded.length - 1][0];
+        let balanceBefore = simulation[0].response[0];
+        let balanceAfter = simulation[simulation.length - 1].response[0];
 
         if (balanceAfter.lte(balanceBefore)) throw `No yield ${repay} ${swapPath}`;
-
         let yieldCollateral = balanceAfter.sub(balanceBefore);
 
         let collateralDecimals = await this.collateralToken.decimals();
 
         let yieldEth = yieldCollateral
             .mul(ethers.BigNumber.from(10).pow(18 - collateralDecimals))
-            .mul(decoded[decoded.length - 2].currPrice).div(c1e18);
+            .mul(simulation[simulation.length - 2].response.currPrice).div(c1e18);
 
         return yieldEth;
     }
@@ -306,12 +303,10 @@ class EOASwapAndRepay {
             },
         ];
 
-        let res = await this.euler.contracts.exec.callStatic.batchDispatch(this.euler.buildBatch(batch), [this.liquidator]);
+        let { simulation } = await this.euler.simulateBatch([this.liquidator], batch);
 
-        let decoded = await this.euler.decodeBatch(batch, res);
-
-        let balanceBefore = decoded[0][0];
-        let balanceAfter = decoded[decoded.length - 1][0];
+        let balanceBefore = simulation[0].response[0];
+        let balanceAfter = simulation[simulation.length - 1].response[0];
 
         return balanceAfter.sub(balanceBefore);
     }
