@@ -15,6 +15,7 @@ Configuration through `.env` file:
 - `MAINNET_JSON_RPC_URL` - your JSON RPC provider endpoint (Infura, Rivet, Alchemy etc.)
 - `MIN_ETH_YIELD` - minimum liquidation yield in ETH
 - `PRV_KEY` - private key of the account executing EOA liquidations. The account needs to hold ETH to execute liquidation transactions.
+- `RECEIVER_SUBACCOUNT_ID` - optional ID of a sub-account to which the yield will be transfered after liquidation
 
 Optionally the bot can be configured to push reports to Discord
 - `DISCORD_WEBHOOK` - Discord webhook URL
