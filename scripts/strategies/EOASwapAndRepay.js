@@ -1,13 +1,17 @@
 let ethers = require("ethers");
 let { cartesian, filterOutRejected, c1e18, txOpts } = require("../utils");
+let { utils } = require('@eulerxyz/euler-sdk')
 
 const MAX_UINT = ethers.constants.MaxUint256;
+
+const receiverSubAccountId = Number(process.env.RECEIVER_SUBACCOUNT_ID)
 
 class EOASwapAndRepay {
     constructor(act, collateral, underlying, euler) {
         this.euler = euler;
         this.violator = act.account;
         this.liquidator = euler.getSigner().address;
+        this.receiver = receiverSubAccountId ? utils.getSubAccount(this.liquidator, receiverSubAccountId) : this.liquidator
         this.collateralAddr = collateral.underlying.toLowerCase();
         this.underlyingAddr = underlying.underlying.toLowerCase();
         this.refAsset = euler.referenceAsset
@@ -205,6 +209,14 @@ class EOASwapAndRepay {
                     this.underlyingAddr,
                 ],
             },
+            ...(this.liquidator !== this.receiver
+                ? [{
+                    contract: this.collateralEToken,
+                    method: 'transferFromMax',
+                    args: [this.liquidator, this.receiver],
+                  }]
+                : []
+            )
         ];
     }
 
@@ -216,7 +228,7 @@ class EOASwapAndRepay {
                 contract: targetCollateralEToken,
                 method: 'balanceOfUnderlying',
                 args: [
-                    this.liquidator,
+                    this.receiver,
                 ]
             },
             ...this.buildLiqBatch(swapPath, repay, unwrapAmount),
@@ -231,7 +243,7 @@ class EOASwapAndRepay {
                 contract: targetCollateralEToken,
                 method: 'balanceOfUnderlying',
                 args: [
-                    this.liquidator,
+                    this.receiver,
                 ],
             },
         ];
