@@ -1,13 +1,20 @@
 let ethers = require("ethers");
+let { FlashbotsBundleProvider, FlashbotsTransactionResolution } = require("@flashbots/ethers-provider-bundle");
 let { cartesian, filterOutRejected, c1e18, txOpts } = require("../utils");
 let { utils } = require('@eulerxyz/euler-sdk')
 
-const MAX_UINT = ethers.constants.MaxUint256;
+let MAX_UINT = ethers.constants.MaxUint256;
 
-const receiverSubAccountId = Number(process.env.RECEIVER_SUBACCOUNT_ID)
+let FLASHBOTS_RELAY_SIGNING_KEY = process.env.FLASHBOTS_RELAY_SIGNING_KEY
+let useFlashbots = process.env.USE_FLASHBOTS === 'true';
+let flashbotsMaxBlocks = Number(process.env.FLASHBOTS_MAX_BLOCKS);
+let flashbotsDisableFallback = process.env.FLASHBOTS_DISABLE_FALLBACK === 'true'
+
+let receiverSubAccountId = Number(process.env.RECEIVER_SUBACCOUNT_ID);
 
 class EOASwapAndRepay {
-    constructor(act, collateral, underlying, euler) {
+    constructor(act, collateral, underlying, euler, reporter) {
+        this.act = act;
         this.euler = euler;
         this.violator = act.account;
         this.liquidator = euler.getSigner().address;
@@ -18,12 +25,12 @@ class EOASwapAndRepay {
         this.best = null;
         this.name = 'EOASwapAndRepay';
         this.isProtectedCollateral = false;
+        this.reporter = reporter || console;
     }
 
     async findBest() {
         let paths;
         let feeLevels = [100, 500, 3000, 10000];
-
 
         let protectedUnderlying
         try {
@@ -114,13 +121,100 @@ class EOASwapAndRepay {
     async exec() {
         if (!this.best) throw 'No opportunity found yet!';
 
-        return await (
-            await this.euler.contracts.exec.batchDispatch(
-                this.euler.buildBatch(this.buildLiqBatch(this.best.swapPath, this.best.repay, this.best.unwrapAmount)),
-                [this.liquidator],
-                ({...await txOpts(this.euler.getProvider()), gasLimit: 1200000})
-            )
-        ).wait();
+        const execRegularTx = async () => {
+            return await (
+                await this.euler.contracts.exec.batchDispatch(
+                    this.euler.buildBatch(this.buildLiqBatch(this.best.swapPath, this.best.repay, this.best.unwrapAmount)),
+                    [this.liquidator],
+                    ({...await txOpts(this.euler.getProvider()), gasLimit: 1200000})
+                )
+            ).wait();
+        }
+
+        if(useFlashbots) {
+            try {
+                let provider = this.euler.getProvider();
+                let signer = this.euler.getSigner();
+                let flashbotsRelaySigningWallet = FLASHBOTS_RELAY_SIGNING_KEY
+                    ? new ethers.Wallet(FLASHBOTS_RELAY_SIGNING_KEY)
+                    : ethers.Wallet.createRandom();
+
+                let flashbotsProvider = await FlashbotsBundleProvider.create(
+                    provider,
+                    flashbotsRelaySigningWallet,
+                    ...(this.euler.chainId === 5 ? ['https://relay-goerli.flashbots.net/', 'goerli'] : []),
+                );
+
+                let tx = await this.euler.contracts.exec.populateTransaction.batchDispatch(
+                    this.euler.buildBatch(this.buildLiqBatch(this.best.swapPath, this.best.repay, this.best.unwrapAmount)),
+                    [this.liquidator],
+                    ({...await txOpts(provider), gasLimit: 1200000}),
+                );
+
+                tx = {
+                    ...tx,
+                    type: 2,
+                    chainId: this.euler.chainId,
+                    nonce: await provider.getTransactionCount(signer.address),
+                };
+
+                let blockNumber = await this.euler.getProvider().getBlockNumber();
+
+                let signedTransaction = await signer.signTransaction(tx);
+                let simulation = await flashbotsProvider.simulate(
+                    [signedTransaction],
+                    blockNumber,
+                );
+
+                if (simulation.error) {
+                    throw new Error(simulation.error.message);
+                }
+                if (simulation.firstRevert) {
+                    throw new Error(`${simulation.firstRevert.error} ${simulation.firstRevert.revert}`);
+                }
+
+                let privateTx = {
+                    transaction: tx,
+                    signer,
+                };
+                let opts = flashbotsMaxBlocks > 0 
+                    ? { maxBlockNumber: blockNumber + flashbotsMaxBlocks }
+                    : {};
+                let submission = await flashbotsProvider.sendPrivateTransaction(
+                    privateTx, 
+                    opts
+                );
+
+                if (submission.error) {
+                    throw new Error(submission.error.message);
+                }
+
+                const txResolution = await submission.wait();
+
+                if (txResolution !== FlashbotsTransactionResolution.TransactionIncluded) {
+                    throw new Error('Transaction dropped');
+                }
+
+                return submission;
+            } catch (e) {
+                console.log('e: ', e);
+
+                if (!flashbotsDisableFallback) {
+                    this.reporter.log({
+                        type: this.reporter.ERROR,
+                        account: this.act,
+                        error: `Flashbots error, falling back to regular tx. err: "${e}"`,
+                        strategy: this.describe(),
+                    });
+
+                    return execRegularTx();
+                } else {
+                    throw e;
+                }
+            }
+        }
+
+        return execRegularTx();
     }
 
     describe() {

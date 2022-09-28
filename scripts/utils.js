@@ -15,14 +15,16 @@ const c1e18 = BigNumber.from(10).pow(18);
 
 const txOpts = async (provider) => {
   let opts = {};
+  let feeData = await provider.getFeeData();
+
+  opts.maxFeePerGas = feeData.maxFeePerGas;
+  opts.maxPriorityFeePerGas = feeData.maxPriorityFeePerGas;
 
   if (process.env.TX_FEE_MUL !== undefined) {
       let feeMul = parseFloat(process.env.TX_FEE_MUL);
 
-      let feeData = await provider.getFeeData();
-
-      opts.maxFeePerGas = BigNumber.from(Math.floor(feeData.maxFeePerGas.toNumber() * feeMul));
-      opts.maxPriorityFeePerGas = BigNumber.from(Math.floor(feeData.maxPriorityFeePerGas.toNumber() * feeMul));
+      opts.maxFeePerGas = BigNumber.from(Math.floor(opts.maxFeePerGas.toNumber() * feeMul));
+      opts.maxPriorityFeePerGas = BigNumber.from(Math.floor(opts.maxPriorityFeePerGas.toNumber() * feeMul));
   }
 
   if (process.env.TX_NONCE !== undefined) {

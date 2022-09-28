@@ -54,7 +54,7 @@ et.testSet({
                 ctx.wallet,
                 network.config.chainId,
                 {
-                    eulTokenConfig: {address: ethers.constants.AddressZero},
+                    eul: {address: ethers.constants.AddressZero},
                     addresses: {
                         ...ctx.addressManifest,
                         eulStakes: ethers.constants.AddressZero,
