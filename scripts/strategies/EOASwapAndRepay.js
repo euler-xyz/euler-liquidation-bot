@@ -163,7 +163,7 @@ class EOASwapAndRepay {
                 let signedTransaction = await signer.signTransaction(tx);
                 let simulation = await flashbotsProvider.simulate(
                     [signedTransaction],
-                    blockNumber,
+                    blockNumber + 1,
                 );
 
                 if (simulation.error) {
