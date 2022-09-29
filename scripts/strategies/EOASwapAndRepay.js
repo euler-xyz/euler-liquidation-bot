@@ -21,7 +21,7 @@ class EOASwapAndRepay {
         this.receiver = receiverSubAccountId ? utils.getSubAccount(this.liquidator, receiverSubAccountId) : this.liquidator
         this.collateralAddr = collateral.underlying.toLowerCase();
         this.underlyingAddr = underlying.underlying.toLowerCase();
-        this.refAsset = euler.referenceAsset
+        this.refAsset = euler.referenceAsset.toLowerCase();
         this.best = null;
         this.name = 'EOASwapAndRepay';
         this.isProtectedCollateral = false;
