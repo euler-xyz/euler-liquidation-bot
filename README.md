@@ -17,9 +17,19 @@ Configuration through `.env` file:
 - `PRV_KEY` - private key of the account executing EOA liquidations. The account needs to hold ETH to execute liquidation transactions.
 - `RECEIVER_SUBACCOUNT_ID` - optional ID of a sub-account to which the yield will be transfered after liquidation
 
-Optionally the bot can be configured to push reports to Discord
+Optional - gas settings
+- `TX_FEE_MUL` - transaction fee multiplier. Default `maxFeePerGas` and `maxPriorityFeePerGas` [returned by provider](https://docs.ethers.io/v5/api/providers/provider/#Provider-getFeeData) will be multiplied by this value.
+- `TX_GAS_LIMIT` - custom `gasLimit`
+
+Optional - the bot can be configured to push reports to Discord
 - `DISCORD_WEBHOOK` - Discord webhook URL
 - `REPORTER_INTERVAL` - reporting interval in seconds
+
+Optional - send transactions through flashbots
+- `USE_FLASHBOTS` - if set to a string `true`, send the final liquidation tx through flashbots. Default `false`.
+- `FLASHBOTS_RELAY_SIGNING_KEY` - key used to identify the searcher in flashbots relay. If not set a random wallet will be generated.
+- `FLASHBOTS_MAX_BLOCKS` - sets the number of blocks during which flashbots will try to include the tx. If not set, flasbots default 25 blocks will be used.
+- `FLASHBOTS_DISABLE_FALLBACK` - by default, if flashbots call fails, the liquidation bot will attempt to send a regular tx. Set to string `true` to disable this behaviour.
 
 ### Running
 

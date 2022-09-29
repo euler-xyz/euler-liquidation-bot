@@ -11,7 +11,6 @@ const Reporter = require('./reporter');
 const NETWORK = process.env.NETWORK || 'mainnet';
 const botConfig = require('../bot.config')[NETWORK];
 
-
 enablePatches();
 
 let subsData = {};
@@ -26,7 +25,7 @@ async function main() {
     const provider = new ethers.providers.JsonRpcProvider(botConfig.jsonRpcUrl)
     const wallet = new ethers.Wallet(process.env.PRV_KEY, provider)
 
-    config(new Euler(wallet, { mainnet: 1, ropsten: 3}[NETWORK]));
+    config(new Euler(wallet, botConfig.chainId));
 
     reporter = new Reporter(botConfig.reporter);
 
@@ -149,7 +148,7 @@ async function doLiquidation(act) {
     const opportunities = await Promise.all(
         cartesian(collaterals, underlyings, activeStrategies).map(
             async ([collateral, underlying, Strategy]) => {
-                const strategy = new Strategy(act, collateral, underlying, euler);
+                const strategy = new Strategy(act, collateral, underlying, euler, reporter);
                 await strategy.findBest();
                 return strategy;
             }

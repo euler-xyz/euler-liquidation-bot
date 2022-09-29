@@ -5,6 +5,7 @@ module.exports = {
     }
   },
   ropsten: {
+    chainId: 3,
     jsonRpcUrl: process.env.ROPSTEN_JSON_RPC_URL,
     eulerscan: {
       ws: process.env.EULERSCAN_WS || 'wss://escan-ropsten.euler.finance',
@@ -13,7 +14,18 @@ module.exports = {
     },
     minYield: process.env.MIN_ETH_YIELD || '0.05',
   },
+  goerli: {
+    chainId: 5,
+    jsonRpcUrl: process.env.GOERLI_JSON_RPC_URL,
+    eulerscan: {
+      ws: process.env.EULERSCAN_WS || 'wss://escan-goerli.euler.finance',
+      queryLimit: process.env.QUERY_LIMIT ? Number(process.env.QUERY_LIMIT) : 500,
+      healthMax: process.env.QUERY_HEALTH_MAX ? Number(process.env.QUERY_HEALTH_MAX) : 1000000,
+    },
+    minYield: process.env.MIN_ETH_YIELD || '0.05',
+  },
   mainnet: {
+    chainId: 1,
     jsonRpcUrl: process.env.MAINNET_JSON_RPC_URL,
     eulerscan: {
       ws: process.env.EULERSCAN_WS || 'wss://escan-mainnet.euler.finance',

@@ -10,9 +10,9 @@ module.exports = class {
 
     constructor(config) {
         this.reportingDisabled = !config;
+        this.nextReport = {};
         if (config) {
             this.logPath = config.logPath;
-            this.nextReport = {};
             setInterval(() => this.report(), config.interval * 1000);
         }
     }
@@ -43,7 +43,6 @@ module.exports = class {
             msg += `Total collateral ETH: ${totalCollateral}, Total liabilities ETH: ${totalLiabilities} \n`
             msg += `Yield: ${yieldTooLowCount}${yieldTooLowCount && ` (${parseFloat(ethers.utils.formatEther(latestYield)).toFixed(6)}) ` }`;
             msg += `No op: ${countEvent(events, this.NO_OPPORTUNITY_FOUND)} `;
-            // msg += `Liquidation: ${countEvent(events, this.LIQUIDATION)} `;
             msg += `Error: ${countEvent(events, this.ERROR)} \n`;
             return msg;
         }).filter(Boolean)
@@ -103,7 +102,7 @@ module.exports = class {
             case this.ERROR:
                 return `${msg} ERROR ${event.error} strategy: ${event.strategy}`;
             case this.LIQUIDATION:
-                return `${msg} LIQUIDATION COMPLETED ${event.tx.transactionHash} balance left: ${ethers.utils.formatEther(event.balanceLeft)} ${event.strategy}`;
+                return `${msg} LIQUIDATION COMPLETED ${event.tx.transactionHash || event.tx.transaction?.hash } balance left: ${ethers.utils.formatEther(event.balanceLeft)} ${event.strategy}`;
         }
     }
 }
