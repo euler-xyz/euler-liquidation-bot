@@ -206,7 +206,7 @@ class EOASwapAndRepay {
                         error: `Flashbots error, falling back to regular tx. err: "${e}"`,
                         strategy: this.describe(),
                     });
-
+                    await this.findBest();
                     return execRegularTx();
                 } else {
                     throw e;
