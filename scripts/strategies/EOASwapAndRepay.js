@@ -481,14 +481,19 @@ class EOASwapAndRepay {
                 allowPartialFill: "false",
                 slippage: "50", // max slippage
             })
+            let err
+            for (let i = 0; i < 3; i++) {
+                try {
+                    let { data } = await axios.get(`${ONEINCH_API_URL}?${searchParams.toString()}`);
 
-            let { data } = await axios.get(
-                `${
-                    ONEINCH_API_URL
-                }?${searchParams.toString()}`,
-            );
+                    return data;
+                } catch (e) {
+                    console.log(e);
+                    err = e;
+                }
+            }
 
-            return data;
+            throw err;
         }
 
         let { toTokenAmount } = await getQuote(parseUnits('1', this.collateralDecimals));
