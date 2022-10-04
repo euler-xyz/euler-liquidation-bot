@@ -5,7 +5,7 @@ let { cartesian, filterOutRejected, c1e18, txOpts } = require('../utils');
 let { utils } = require('@eulerxyz/euler-sdk');
 
 let FLASHBOTS_RELAY_SIGNING_KEY = process.env.FLASHBOTS_RELAY_SIGNING_KEY;
-let ONEINCH_API_URL             = process.env.ONEINCH_API_URL || 'https://euler.api.enterprise.1inch.exchange/v4.0/1/swap';
+let ONEINCH_API_URL             = process.env.ONEINCH_API_URL;
 let useFlashbots                = process.env.USE_FLASHBOTS === 'true';
 let flashbotsMaxBlocks          = Number(process.env.FLASHBOTS_MAX_BLOCKS);
 let flashbotsDisableFallback    = process.env.FLASHBOTS_DISABLE_FALLBACK === 'true';
@@ -469,6 +469,8 @@ class EOASwapAndRepay {
     }
 
     async getOneInchQuote(targetAmountOut) {
+        if (!ONEINCH_API_URL) return;
+
         let getQuote = async amount => {
             let searchParams = new URLSearchParams({
                 fromTokenAddress: this.finalCollateralAddr,

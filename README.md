@@ -16,6 +16,7 @@ Configuration through `.env` file:
 - `MIN_ETH_YIELD` - minimum liquidation yield in ETH
 - `PRV_KEY` - private key of the account executing EOA liquidations. The account needs to hold ETH to execute liquidation transactions.
 - `RECEIVER_SUBACCOUNT_ID` - optional ID of a sub-account to which the yield will be transfered after liquidation
+- `ONEINCH_API_URL` - optional [1inch swap](https://docs.1inch.io/docs/aggregation-protocol/api/swap-params) API URL. If set, the bot will try to swap as much collateral as possible first on 1inch, presumably at better rates, and the remainder on Uni V3 exact output.
 
 Optional - gas settings
 - `TX_FEE_MUL` - transaction fee multiplier. Default `maxFeePerGas` and `maxPriorityFeePerGas` [returned by provider](https://docs.ethers.io/v5/api/providers/provider/#Provider-getFeeData) will be multiplied by this value.
