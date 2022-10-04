@@ -13,6 +13,7 @@
     "@nomiclabs/hardhat-waffle": "^2.0.1",
     "@uniswap/v3-periphery": "^1.1.1",
     "@uniswap/v3-sdk": "^3.8.2",
+    "axios": "^0.27.2",
     "chai": "^4.3.4",
     "discord-webhook-node": "^1.1.8",
     "ethers": "^5.4.1",
