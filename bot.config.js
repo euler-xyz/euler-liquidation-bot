@@ -13,6 +13,7 @@ module.exports = {
       healthMax: process.env.QUERY_HEALTH_MAX ? Number(process.env.QUERY_HEALTH_MAX) : 1000000,
     },
     minYield: process.env.MIN_ETH_YIELD || '0.05',
+    skipInsufficientCollateral: process.env.SKIP_ACCOUNTS_WITH_INSUFFICIENT_COLLATERAL === 'true',
   },
   goerli: {
     chainId: 5,
@@ -23,6 +24,7 @@ module.exports = {
       healthMax: process.env.QUERY_HEALTH_MAX ? Number(process.env.QUERY_HEALTH_MAX) : 1000000,
     },
     minYield: process.env.MIN_ETH_YIELD || '0.05',
+    skipInsufficientCollateral: process.env.SKIP_ACCOUNTS_WITH_INSUFFICIENT_COLLATERAL === 'true',
   },
   mainnet: {
     chainId: 1,
@@ -37,6 +39,7 @@ module.exports = {
       logPath: process.env.REPORTER_LOG_PATH || './log.txt',
     },
     minYield: process.env.MIN_ETH_YIELD || '0.05',
+    skipInsufficientCollateral: process.env.SKIP_ACCOUNTS_WITH_INSUFFICIENT_COLLATERAL === 'true',
   },
   hardhat: {
     jsonRpcUrl: "http://localhost:8545",

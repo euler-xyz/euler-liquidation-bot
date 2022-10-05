@@ -133,7 +133,17 @@ async function liquidateDesignatedAccount(violator) {
 }
 
 async function doLiquidation(act) {
-    const { totalLiabilities, totalCollateral } = await getAccountLiquidity(act.account)
+    const { totalLiabilities, totalCollateral, maxCollateralValue } = await getAccountLiquidity(act.account);
+
+    if (
+        botConfig.skipInsufficientCollateral &&
+        maxCollateralValue.lt(ethers.utils.parseEther(botConfig.minYield))
+    ) {
+        reporter.log({ type: reporter.SKIP_INSUFFICIENT_COLLATERAL, account: act, maxCollateralValue })
+        deferAccount(act.account, 20 * 60000);
+        return;
+    }
+
     act = {
         ...act,
         totalLiabilities,
@@ -184,10 +194,12 @@ async function getAccountLiquidity(account) {
 
     let totalLiabilities = ethers.BigNumber.from(0);
     let totalAssets = ethers.BigNumber.from(0);
+    let maxCollateralValue = ethers.BigNumber.from(0);
 
     for (let asset of detLiq) {
         totalLiabilities = totalLiabilities.add(asset.status.liabilityValue);
         totalAssets = totalAssets.add(asset.status.collateralValue);
+        if (maxCollateralValue.lt(asset.status.collateralValue)) maxCollateralValue = ethers.BigNumber.from(asset.status.collateralValue);
 
         markets.push({ 
             liquidityStatus: {
@@ -203,6 +215,7 @@ async function getAccountLiquidity(account) {
     return {
         totalLiabilities,
         totalCollateral: totalAssets,
+        maxCollateralValue,
         account,
         healthScore,
         markets,

@@ -7,6 +7,7 @@ module.exports = class {
     NO_OPPORTUNITY_FOUND = 2;
     LIQUIDATION = 3;
     ERROR = 4;
+    SKIP_INSUFFICIENT_COLLATERAL = 5;
 
     constructor(config) {
         this.reportingDisabled = !config;
@@ -101,6 +102,8 @@ module.exports = class {
                 return `${msg} No liquidation opportunity found`;
             case this.ERROR:
                 return `${msg} ERROR ${event.error} strategy: ${event.strategy}`;
+            case this.SKIP_INSUFFICIENT_COLLATERAL:
+                return `${msg} SKIPPED - INSUFFICIENT COLLATERAL value: ${ethers.utils.formatEther(event.maxCollateralValue)}`;
             case this.LIQUIDATION:
                 return `${msg} LIQUIDATION COMPLETED ${event.tx.transactionHash || event.tx.transaction?.hash } balance left: ${ethers.utils.formatEther(event.balanceLeft)} ${event.strategy}`;
         }
