@@ -483,6 +483,8 @@ class EOASwapAndRepay {
             })
             let err
             for (let i = 0; i < 3; i++) {
+                await new Promise(r => setTimeout(r, i * 100));
+
                 try {
                     let { data } = await axios.get(`${ONEINCH_API_URL}?${searchParams.toString()}`);
 
