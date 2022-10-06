@@ -135,6 +135,12 @@ async function liquidateDesignatedAccount(violator) {
 async function doLiquidation(act) {
     const { totalLiabilities, totalCollateral, maxCollateralValue } = await getAccountLiquidity(act.account);
 
+    act = {
+        ...act,
+        totalLiabilities,
+        totalCollateral,
+    }
+    
     if (
         botConfig.skipInsufficientCollateral &&
         maxCollateralValue.lt(ethers.utils.parseEther(botConfig.minYield))
@@ -144,11 +150,6 @@ async function doLiquidation(act) {
         return;
     }
 
-    act = {
-        ...act,
-        totalLiabilities,
-        totalCollateral,
-    }
     const activeStrategies = [strategies.EOASwapAndRepay]; // TODO config
     const collaterals = act.markets.filter(m => m.liquidityStatus.collateralValue !== '0');
     const underlyings = act.markets.filter(m => m.liquidityStatus.liabilityValue !== '0');
