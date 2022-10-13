@@ -153,7 +153,7 @@ class EOASwapAndRepay {
                 await this.euler.contracts.exec.batchDispatch(
                     this.euler.buildBatch(batch),
                     [this.liquidator],
-                    ({...await txOpts(this.euler.getProvider()), gasLimit: 1200000})
+                    ({...await txOpts(this.euler.getProvider())})
                 )
             ).wait();
         }
@@ -175,7 +175,7 @@ class EOASwapAndRepay {
                 let tx = await this.euler.contracts.exec.populateTransaction.batchDispatch(
                     this.euler.buildBatch(this.buildLiqBatch(this.best.swapPath, this.best.repay, this.best.unwrapAmount, this.best.oneInchQuote)),
                     [this.liquidator],
-                    ({...await txOpts(provider), gasLimit: 1200000}),
+                    ({...await txOpts(provider)}),
                 );
 
                 tx = {
