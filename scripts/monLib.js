@@ -5,7 +5,7 @@ const { Euler } = require('@eulerxyz/euler-sdk');
 
 const strategies = require('./strategies');
 const EulerToolClient = require('./EulerToolClient.js');
-const { cartesian, c1e18 } = require('./utils');
+const { cartesian, c1e18, txOpts } = require('./utils');
 const Reporter = require('./reporter');
 
 const NETWORK = process.env.NETWORK || 'mainnet';
@@ -133,14 +133,21 @@ async function liquidateDesignatedAccount(violator) {
 }
 
 async function doLiquidation(act) {
-    const { totalLiabilities, totalCollateral, maxCollateralValue } = await getAccountLiquidity(act.account);
+    let isProfitable = (opportunity, feeData) => {
+        if (Number(botConfig.minYield) === 0) return true;
+
+        let gasCost = feeData.maxFeePerGas.mul(opportunity.gas);
+        return opportunity.yield.sub(gasCost).gte(ethers.utils.parseEther(botConfig.minYield));
+    }
+
+    let { totalLiabilities, totalCollateral, maxCollateralValue } = await getAccountLiquidity(act.account);
 
     act = {
         ...act,
         totalLiabilities,
         totalCollateral,
     }
-    
+
     if (
         botConfig.skipInsufficientCollateral &&
         maxCollateralValue.lt(ethers.utils.parseEther(botConfig.minYield))
@@ -150,13 +157,13 @@ async function doLiquidation(act) {
         return;
     }
 
-    const activeStrategies = [strategies.EOASwapAndRepay]; // TODO config
-    const collaterals = act.markets.filter(m => m.liquidityStatus.collateralValue !== '0');
-    const underlyings = act.markets.filter(m => m.liquidityStatus.liabilityValue !== '0');
+    let activeStrategies = [strategies.EOASwapAndRepay]; // TODO config
+    let collaterals = act.markets.filter(m => m.liquidityStatus.collateralValue !== '0');
+    let underlyings = act.markets.filter(m => m.liquidityStatus.liabilityValue !== '0');
 
 
     // TODO all settled?
-    const opportunities = await Promise.all(
+    let opportunities = await Promise.all(
         cartesian(collaterals, underlyings, activeStrategies).map(
             async ([collateral, underlying, Strategy]) => {
                 const strategy = new Strategy(act, collateral, underlying, euler, reporter);
@@ -175,13 +182,15 @@ async function doLiquidation(act) {
         reporter.log({ type: reporter.NO_OPPORTUNITY_FOUND, account: act })
         return false;
     }
-
-    if (bestStrategy.best.yield.lt(ethers.utils.parseEther(botConfig.minYield))) {
+    let { opts, feeData } = await txOpts(euler.getProvider());
+    // use unmodified fee estimate for profitability calculation
+    if (!isProfitable(bestStrategy.best, feeData)) {
         deferAccount(act.account, 10 * 60000)
-        reporter.log({ type: reporter.YIELD_TOO_LOW, account: act, yield: bestStrategy.best.yield, required: botConfig.minYield });
+        reporter.log({ type: reporter.YIELD_TOO_LOW, account: act, yield: bestStrategy.best.yield, gas: bestStrategy.best.gas.mul(feeData.maxFeePerGas), required: botConfig.minYield });
         return false;
     }
-    let tx = await bestStrategy.exec();
+    let tx = await bestStrategy.exec(opts, isProfitable);
+
     let botEthBalance = await euler.getSigner().getBalance();
 
     reporter.log({ type: reporter.LIQUIDATION, account: act, tx, strategy: bestStrategy.describe(), balanceLeft: botEthBalance });

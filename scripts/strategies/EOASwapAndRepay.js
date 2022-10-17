@@ -50,11 +50,12 @@ class EOASwapAndRepay {
                 this.unwrappedCollateralEToken = this.euler.eToken(unwrappedEToken);
 
                 let allowance = await this.euler.erc20(this.unwrappedCollateralAddr).allowance(this.liquidator, this.euler.addresses.euler);
+                let { opts } = await txOpts(this.euler.getProvider())
                 if (allowance.eq(0)) {
                     await (await this.euler.erc20(this.unwrappedCollateralAddr).approve(
                         this.euler.addresses.euler,
                         MAX_UINT,
-                        ({...await txOpts(this.euler.getProvider()), gasLimit: 300000})
+                        ({...opts, gasLimit: 300000})
                     )).wait();
                 }
             }
@@ -114,13 +115,14 @@ class EOASwapAndRepay {
 
             let tests = await Promise.allSettled(
                 paths.map(async (path) => {
-                    let yieldEth = await this.testLiquidation(path, repay, unwrapAmount, oneInchQuote)
+                    let { yieldEth, gas } = await this.testLiquidation(path, repay, unwrapAmount, oneInchQuote)
                     return {
                         swapPath: path,
                         repay,
                         yield: yieldEth,
                         unwrapAmount,
                         oneInchQuote,
+                        gas,
                     };
                 })
             );
@@ -141,19 +143,17 @@ class EOASwapAndRepay {
         }
     }
 
-    async exec() {
+    async exec(opts, isProfitable) {
         if (!this.best) throw 'No opportunity found yet!';
 
-
-
-        let execRegularTx = async () => {
+        let execRegularTx = async (opts) => {
             let batch = this.buildLiqBatch(this.best.swapPath, this.best.repay, this.best.unwrapAmount, this.best.oneInchQuote);
 
             return await (
                 await this.euler.contracts.exec.batchDispatch(
                     this.euler.buildBatch(batch),
                     [this.liquidator],
-                    ({...await txOpts(this.euler.getProvider())})
+                    opts
                 )
             ).wait();
         }
@@ -175,7 +175,7 @@ class EOASwapAndRepay {
                 let tx = await this.euler.contracts.exec.populateTransaction.batchDispatch(
                     this.euler.buildBatch(this.buildLiqBatch(this.best.swapPath, this.best.repay, this.best.unwrapAmount, this.best.oneInchQuote)),
                     [this.liquidator],
-                    ({...await txOpts(provider)}),
+                    opts,
                 );
 
                 tx = {
@@ -204,12 +204,12 @@ class EOASwapAndRepay {
                     transaction: tx,
                     signer,
                 };
-                let opts = flashbotsMaxBlocks > 0 
+                let fbOpts = flashbotsMaxBlocks > 0 
                     ? { maxBlockNumber: blockNumber + flashbotsMaxBlocks }
                     : {};
                 let submission = await flashbotsProvider.sendPrivateTransaction(
                     privateTx, 
-                    opts
+                    fbOpts
                 );
 
                 if (submission.error) {
@@ -233,15 +233,19 @@ class EOASwapAndRepay {
                         error: `Flashbots error, falling back to regular tx. err: "${e}"`,
                         strategy: this.describe(),
                     });
+                    // recalculate opportunity
                     await this.findBest();
-                    return execRegularTx();
+                    let { opts: newOpts, feeData } = await txOpts(this.euler.getProvider());
+                    if (!isProfitable(this.best, feeData)) throw new Error('Fallback tx is no longer profitable');
+
+                    return execRegularTx(newOpts);
                 } else {
                     throw e;
                 }
             }
         }
 
-        return execRegularTx();
+        return execRegularTx(opts);
     }
 
     describe() {
@@ -394,8 +398,8 @@ class EOASwapAndRepay {
                 ],
             },
         ];
-        let simulation, error;
-        ({ simulation, error } = await this.euler.simulateBatch([this.liquidator], batchItems));
+        let simulation, error, gas;
+        ({ simulation, error, gas } = await this.euler.simulateBatch([this.liquidator], batchItems));
         if (error) throw error.value;
 
         let balanceBefore = simulation[0].response[0];
@@ -408,7 +412,7 @@ class EOASwapAndRepay {
             .mul(ethers.BigNumber.from(10).pow(18 - this.collateralDecimals))
             .mul(simulation[simulation.length - 2].response.currPrice).div(c1e18);
 
-        return yieldEth;
+        return { yieldEth, gas };
     }
 
     encodePath(path, fees) {

@@ -1,4 +1,4 @@
-const { BigNumber } = require('ethers');
+const { BigNumber, utils } = require('ethers');
 
 const cartesian = (...a) => a.reduce((a, b) => a.flatMap(d => b.map(e => [d, e].flat())));
 
@@ -16,7 +16,7 @@ const c1e18 = BigNumber.from(10).pow(18);
 const txOpts = async (provider) => {
   let opts = {};
   let feeData = await provider.getFeeData();
-
+  
   opts.maxFeePerGas = feeData.maxFeePerGas;
   opts.maxPriorityFeePerGas = feeData.maxPriorityFeePerGas;
 
@@ -35,7 +35,7 @@ const txOpts = async (provider) => {
       opts.gasLimit = parseInt(process.env.TX_GAS_LIMIT);
   }
 
-  return opts;
+  return { opts, feeData };
 };
 
 module.exports = {

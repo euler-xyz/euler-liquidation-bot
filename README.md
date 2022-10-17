@@ -13,7 +13,7 @@ npm i
 Configuration through `.env` file:
 
 - `MAINNET_JSON_RPC_URL` - your JSON RPC provider endpoint (Infura, Rivet, Alchemy etc.).
-- `MIN_ETH_YIELD` - minimum liquidation yield in ETH. Default `0.05`.
+- `MIN_ETH_YIELD` - minimum liquidation yield in ETH, taking into account gas cost. Default `0.05`.
 - `PRV_KEY` - private key of the account executing EOA liquidations. The account needs to hold ETH to execute liquidation transactions.
 - `RECEIVER_SUBACCOUNT_ID` - optional ID of a sub-account to which the yield will be transfered after liquidation.
 - `ONEINCH_API_URL` - optional [1inch swap](https://docs.1inch.io/docs/aggregation-protocol/api/swap-params) API URL. If set, the bot will try to swap as much collateral as possible first on 1inch, presumably at better rates, and the remainder on Uni V3 exact output.

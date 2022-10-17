@@ -94,10 +94,14 @@ module.exports = class {
     }
 
     describeEvent(event) {
-        const msg = `${event.time} Account: ${event.account.account} HS: ${event.account.healthScore / 1000000}`
+        const hs = ethers.BigNumber.isBigNumber(event.account.healthScore)
+            ? ethers.utils.formatUnits(event.account.healthScore.div(ethers.BigNumber.from(10).pow(12)), 6)
+            : event.account.healthScore / 1000000;
+        const msg = `${event.time} Account: ${event.account.account} HS: ${hs}`;
+
         switch (event.type) {
             case this.YIELD_TOO_LOW:
-                return `${msg} Yield too low (${ethers.utils.formatEther(event.yield)} ETH, required ${event.required} ETH)`;
+                return `${msg} Yield too low (${ethers.utils.formatEther(event.yield)} ETH, gas: ${ethers.utils.formatEther(event.gas)} ETH), required: ${event.required}`;
             case this.NO_OPPORTUNITY_FOUND:
                 return `${msg} No liquidation opportunity found`;
             case this.ERROR:
