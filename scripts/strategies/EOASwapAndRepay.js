@@ -502,36 +502,86 @@ class EOASwapAndRepay {
             throw err;
         }
 
-        let { toTokenAmount } = await getQuote(parseUnits('1', this.collateralDecimals));
+        let findEstimatedAmountIn = async () => {
+            let fromDecimals = this.collateralDecimals;
+            let toDecimals = this.underlyingDecimals;
 
-        let amount = targetAmountOut
-        if (this.collateralDecimals > this.underlyingDecimals) {
-            amount = amount.mul(ethers.BigNumber.from('10').pow(this.collateralDecimals - this.underlyingDecimals));
-        } else {
-            amount = amount.div(ethers.BigNumber.from('10').pow(this.underlyingDecimals - this.collateralDecimals));
-        }
-        amount = amount
-            .mul(parseUnits('1', this.underlyingDecimals))
-            .div(toTokenAmount);
+            let unitQuote = await getQuote(
+                ethers.utils.parseUnits("1", fromDecimals),
+            );
 
-        if (amount.eq(0)) return;
+            let unitAmountTo = ethers.BigNumber.from(unitQuote.toTokenAmount);
 
-        let cnt = 0;
-        let quote;
-        do {
-            quote = await getQuote(amount);
-            cnt++;
-            amount = amount.mul(100 - cnt).div(100);
-
-            if (cnt > 5) {
-                throw new Error("Failed fetching quote in 6 iterations");
+            let fromAmount = targetAmountOut;
+            // adjust scale to match token from
+            if (fromDecimals > toDecimals) {
+                fromAmount = fromAmount.mul(
+                    ethers.BigNumber.from("10").pow(fromDecimals - toDecimals),
+                );
+            } else {
+                fromAmount = fromAmount.div(
+                    ethers.BigNumber.from("10").pow(toDecimals - fromDecimals),
+                );
             }
-        } while (targetAmountOut.lte(quote.toTokenAmount))
+            // divide by unit price
+            return (fromAmount = fromAmount
+                .mul(ethers.utils.parseUnits("1", toDecimals))
+                .div(unitAmountTo));
+        };
+
+        let find1InchRoute = async (
+            targetAmountTo,
+            amountFrom,
+            shouldContinue,
+        ) => {
+            let result;
+            let percentageChange = 10000; // 100% no change
+            let cnt = 0;
+            do {
+                amountFrom = amountFrom.mul(percentageChange).div(10000);
+                result = await getQuote(amountFrom);
+
+                let swapAmountTo = ethers.BigNumber.from(result.toTokenAmount);
+                percentageChange = swapAmountTo.gt(targetAmountTo)
+                    ? // result above target, adjust input down by the percentage difference of outputs - 0.01%
+                    swapAmountTo
+                        .sub(targetAmountTo)
+                        .mul(10000)
+                        .div(targetAmountTo)
+                        .add(1)
+                        .sub(10000)
+                        .abs()
+                    : // result below target, adjust input by the percentege difference of outputs + 0.01%
+                    targetAmountTo
+                        .sub(swapAmountTo)
+                        .mul(10000)
+                        .div(swapAmountTo)
+                        .add(10000)
+                        .add(1);
+
+                    if (cnt++ === 15) throw new Error("Failed fetching quote in 15 iterations");
+                } while (shouldContinue(result));
+
+            return { amountFrom, result };
+        };
+
+        // rough estimate by calculating execution price on a unit trade 
+        let estimatedAmountIn = await findEstimatedAmountIn();
+
+        let { amountFrom, result } = await find1InchRoute(
+            targetAmountOut,
+            estimatedAmountIn,
+            // search until quote is 99.5 - 100% target
+            result =>
+                targetAmountOut.lte(result.toTokenAmount) ||
+                ethers.BigNumber.from(result.toTokenAmount).mul(1000).div(targetAmountOut).lt(995),
+        );
+
 
         return {
-            amount: ethers.BigNumber.from(quote.fromTokenAmount),
-            payload: quote.tx.data,
-        }
+            amount: amountFrom,
+            payload: result.tx.data,
+        };
     }
 }
 
