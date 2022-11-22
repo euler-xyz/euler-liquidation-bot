@@ -541,22 +541,24 @@ class EOASwapAndRepay {
                 amountFrom = amountFrom.mul(percentageChange).div(10000);
                 result = await getQuote(amountFrom);
                 let swapAmountTo = ethers.BigNumber.from(result.toTokenAmount);
-                percentageChange = swapAmountTo.gt(targetAmountTo)
-                    ? // result above target, adjust input down by the percentage difference of outputs - 0.1%
-                    swapAmountTo
-                        .sub(targetAmountTo)
-                        .mul(10000)
-                        .div(targetAmountTo)
-                        .add(10)
-                        .sub(10000)
-                        .abs()
-                    : // result below target, adjust input by the percentege difference of outputs + 0.1%
-                    targetAmountTo
-                        .sub(swapAmountTo)
-                        .mul(10000)
-                        .div(swapAmountTo)
-                        .add(10000)
-                        .add(10);
+                percentageChange = swapAmountTo.eq(targetAmountTo)
+                    ? 99900 // result equal target, push input down by 0.1%
+                    : swapAmountTo.gt(targetAmountTo)
+                        ? // result above target, adjust input down by the percentage difference of outputs - 0.1%
+                        swapAmountTo
+                            .sub(targetAmountTo)
+                            .mul(10000)
+                            .div(targetAmountTo)
+                            .add(10)
+                            .sub(10000)
+                            .abs()
+                        : // result below target, adjust input by the percentege difference of outputs + 0.1%
+                        targetAmountTo
+                            .sub(swapAmountTo)
+                            .mul(10000)
+                            .div(swapAmountTo)
+                            .add(10000)
+                            .add(10);
 
                     if (cnt++ === 15) throw new Error("Failed fetching quote in 15 iterations");
                 } while (shouldContinue(result));
