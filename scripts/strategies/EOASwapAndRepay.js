@@ -573,8 +573,11 @@ class EOASwapAndRepay {
             estimatedAmountIn,
             // search until quote is 99.5 - 100% target
             result =>
-                targetAmountOut.lte(result.toTokenAmount) ||
-                ethers.BigNumber.from(result.toTokenAmount).mul(1000).div(targetAmountOut).lt(995),
+                targetAmountOut.lte(result.toTokenAmount)
+                || (
+                    ethers.BigNumber.from(result.toTokenAmount).mul(1000).div(targetAmountOut).lt(995)
+                    && ethers.BigNumber.from(result.toTokenAmount).gte(1000) // for dust amounts the 0.5% accuracy might not be possible
+                ),
         );
 
 
