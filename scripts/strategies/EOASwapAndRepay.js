@@ -542,7 +542,7 @@ class EOASwapAndRepay {
                 result = await getQuote(amountFrom);
                 let swapAmountTo = ethers.BigNumber.from(result.toTokenAmount);
                 percentageChange = swapAmountTo.eq(targetAmountTo)
-                    ? 99900 // result equal target, push input down by 0.1%
+                    ? 9990 // result equal target, push input down by 0.1%
                     : swapAmountTo.gt(targetAmountTo)
                         ? // result above target, adjust input down by the percentage difference of outputs - 0.1%
                         swapAmountTo
