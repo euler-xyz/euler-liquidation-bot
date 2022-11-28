@@ -104,12 +104,14 @@ class EOASwapAndRepay {
                     oneInchQuote = await this.getOneInchQuote(repay.div(ethers.BigNumber.from(10).pow(18 - this.underlyingDecimals)));
                 } catch (e) {
                     console.log('e: ', e);
-                    this.reporter.log({
-                        type: this.reporter.ERROR,
-                        account: this.act,
-                        error: `Failed fetching 1inch quote`,
-                        strategy: this.describe(),
-                    });
+                    if (!(e.response && e.response.data && e.response.data && e.response.data.description === 'insufficient liquidity')) {
+                        this.reporter.log({
+                            type: this.reporter.ERROR,
+                            account: this.act,
+                            error: `Failed fetching 1inch quote`,
+                            strategy: this.describe(),
+                        });
+                    }
                 }
             }
 
