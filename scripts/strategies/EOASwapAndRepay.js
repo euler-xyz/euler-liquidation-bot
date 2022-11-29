@@ -16,6 +16,8 @@ let MAX_UINT    = ethers.constants.MaxUint256;
 let formatUnits = ethers.utils.formatUnits;
 let parseUnits  = ethers.utils.parseUnits;
 
+let SWAPHUB_MODE_EXACT_OUTPUT = 1;
+
 class EOASwapAndRepay {
     constructor(act, collateral, underlying, euler, reporter) {
         this.act = act;
@@ -91,7 +93,7 @@ class EOASwapAndRepay {
         }
 
         let repayFraction = 98;
-        while (!this.best && repayFraction === 98) {
+        while (!this.best && repayFraction >= 49) {
             let repay = liqOpp.repay.mul(repayFraction).div(100);
             let unwrapAmount;
             if (this.isProtectedCollateral) {
@@ -303,42 +305,53 @@ class EOASwapAndRepay {
             if (oneInchQuote) {
                 conversionItems.push(
                     {
-                        contract: 'swap',
-                        method: 'swap1Inch',
-                        args: [{
-                            subAccountIdIn: 0,
-                            subAccountIdOut: 0,
-                            underlyingIn: this.finalCollateralAddr,
-                            underlyingOut: this.underlyingAddr,
-                            amount: oneInchQuote.amount,
-                            amountOutMinimum: 0, // MAX SLIPPAGE!
-                            payload: oneInchQuote.payload,
-                        }]
-                    },
-                    {
-                        contract: this.underlyingEToken,
-                        method: 'burn',
-                        args: [0, MAX_UINT],
+                        contract: 'swapHub',
+                        method: 'swapAndRepay',
+                        args: [
+                            0, // sub-account in
+                            0, // sub-account out
+                            this.euler.addresses.swapHandler1Inch,
+                            {
+                                underlyingIn: this.finalCollateralAddr,
+                                underlyingOut: this.underlyingAddr,
+                                mode: SWAPHUB_MODE_EXACT_OUTPUT,
+                                amountIn: MAX_UINT, // MAX SLIPPAGE ALLOWED! Assuming the bot doesn't hold any token balances before the liquidation
+                                amountOut: 0, // Ignored by swapAndRepay
+                                // Arbitrary 1000 wei to account for fee on transfer or rebasing tokens like stETH.
+                                // For tokens with less decimals than 15 decimals it will be ineffective.
+                                exactOutTolerance: 1000,
+                                payload: ethers.utils.defaultAbiCoder.encode(
+                                    ["bytes", "bytes"],
+                                    [oneInchQuote.payload, swapPath],
+                                ),
+                            },
+                            0, // target debt
+                        ]
                     },
                 )
+            } else {
+                conversionItems.push(
+                    {
+                        contract: 'swapHub',
+                        method: 'swapAndRepay',
+                        args: [
+                            0,
+                            0,
+                            this.euler.addresses.swapHandlerUniswapV3,
+                            {
+                                underlyingIn: this.finalCollateralAddr,
+                                underlyingOut: this.underlyingAddr,
+                                amountIn: MAX_UINT, // MAX SLIPPAGE ALLOWED
+                                amountOut: 0, // ignored
+                                mode: SWAPHUB_MODE_EXACT_OUTPUT,
+                                exactOutTolerance: 1000,
+                                payload: swapPath,
+                            },
+                            0,
+                        ],
+                    },
+                );
             }
-            conversionItems.push(
-                {
-                    contract: 'swap',
-                    method: 'swapAndRepayUni',
-                    args: [
-                        {
-                            subAccountIdIn: 0,
-                            subAccountIdOut: 0,
-                            amountOut: 0,
-                            amountInMaximum: MAX_UINT,
-                            deadline: 0, // FIXME!
-                            path: swapPath,
-                        },
-                        0,
-                    ],
-                },
-            );
         }
 
         return [
@@ -483,7 +496,8 @@ class EOASwapAndRepay {
                 toTokenAddress: this.underlyingAddr,
                 amount: amount.toString(),
                 disableEstimate: "true",
-                fromAddress: this.euler.addresses.euler,
+                destReceiver: this.euler.addresses.euler,
+                fromAddress: this.euler.addresses.swapHandler1Inch,
                 allowPartialFill: "false",
                 slippage: "50", // max slippage
             })
@@ -582,7 +596,6 @@ class EOASwapAndRepay {
                     && ethers.BigNumber.from(result.toTokenAmount).gte(1000) // for dust amounts the 0.5% accuracy might not be possible
                 ),
         );
-
 
         return {
             amount: amountFrom,
