@@ -330,16 +330,20 @@ class EOASwapAndRepay {
             } else {
                 conversionItems.push(
                     {
-                        contract: 'swap',
-                        method: 'swapAndRepayUni',
+                        contract: 'swapHub',
+                        method: 'swapAndRepay',
                         args: [
+                            0,
+                            0,
+                            this.euler.addresses.swapHandlerUniswapV3,
                             {
-                                subAccountIdIn: 0,
-                                subAccountIdOut: 0,
-                                amountOut: 0,
-                                amountInMaximum: MAX_UINT,
-                                deadline: 0, // FIXME!
-                                path: swapPath,
+                                underlyingIn: this.finalCollateralAddr,
+                                underlyingOut: this.underlyingAddr,
+                                amountIn: MAX_UINT, // MAX SLIPPAGE ALLOWED
+                                amountOut: 0, // ignored
+                                mode: SWAPHUB_MODE_EXACT_OUTPUT,
+                                exactOutTolerance: 1000,
+                                payload: swapPath,
                             },
                             0,
                         ],
