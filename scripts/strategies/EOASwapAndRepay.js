@@ -106,7 +106,10 @@ class EOASwapAndRepay {
                     oneInchQuote = await this.getOneInchQuote(repay.div(ethers.BigNumber.from(10).pow(18 - this.underlyingDecimals)));
                 } catch (e) {
                     console.log('e: ', e);
-                    if (!(e.response && e.response.data && e.response.data && e.response.data.description === 'insufficient liquidity')) {
+                    if (!(
+                        e.response && e.response.data && e.response.data && e.response.data.description === 'insufficient liquidity'
+                        || e.message && e.message.includes('zero estimated amount')
+                    )) {
                         this.reporter.log({
                             type: this.reporter.ERROR,
                             account: this.act,
@@ -116,7 +119,6 @@ class EOASwapAndRepay {
                     }
                 }
             }
-
             let tests = await Promise.allSettled(
                 paths.map(async (path) => {
                     let { yieldEth, gas } = await this.testLiquidation(path, repay, unwrapAmount, oneInchQuote)
@@ -540,9 +542,9 @@ class EOASwapAndRepay {
                 );
             }
             // divide by unit price
-            return (fromAmount = fromAmount
+            return fromAmount
                 .mul(ethers.utils.parseUnits("1", toDecimals))
-                .div(unitAmountTo));
+                .div(unitAmountTo);
         };
 
         let find1InchRoute = async (
@@ -584,6 +586,7 @@ class EOASwapAndRepay {
 
         // rough estimate by calculating execution price on a unit trade 
         let estimatedAmountIn = await findEstimatedAmountIn();
+        if (estimatedAmountIn.eq(0)) throw new Error('zero estimated amount')
 
         let { amountFrom, result } = await find1InchRoute(
             targetAmountOut,

@@ -80,7 +80,7 @@ function doConnect() {
         }
 
         for (let p of patch.result) p.path = p.path.split('/').filter(e => e !== '');
-        
+
         setData({ accounts: applyPatches(subsData.accounts, patch.result) });
         processAccounts();
     });
