@@ -566,7 +566,7 @@ class EOASwapAndRepay {
                         swapAmountTo
                             .sub(targetAmountTo)
                             .mul(10000)
-                            .div(targetAmountTo)
+                            .div(swapAmountTo)
                             .add(10)
                             .sub(10000)
                             .abs()
