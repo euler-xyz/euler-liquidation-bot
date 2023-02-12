@@ -56,7 +56,7 @@ module.exports = class {
             let buff = []
             const parts = [];
             rep.forEach(r => {
-                if ([...buff, r].join('\n').length < 2000) {
+                if ([...buff, r].join('\n').length < 1800) {
                     buff.push(r);
                 } else {
                     parts.push([...buff]);
@@ -66,7 +66,11 @@ module.exports = class {
             parts.push(buff);
 
             for (const p of parts) {
-                await discord(`\`\`\`${p.join('\n')}\`\`\``);
+                try {
+                    await discord(`\`\`\`${p.join('\n')}\`\`\``);
+                } catch (e) {
+                    console.log('Error sending to discord', e, p);
+                }
                 // console.log(`\`\`\`${p.join('\n')}\`\`\``);
             }
         }
