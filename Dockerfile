@@ -5,6 +5,6 @@ RUN apt-get update && apt-get install -y apt-transport-https ca-certificates cur
     apt-get update && \
     apt-get -y install doppler
 COPY . .
-CMD npm install
+RUN npm install
 ENTRYPOINT ["doppler", "run", "--"]
 CMD npm start
